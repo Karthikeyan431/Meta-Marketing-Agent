@@ -1,0 +1,16 @@
+# Architecture Decision Register — Phase 1A
+
+| ADR | Decision | Status | Validation result (2026-09-04) |
+|---|---|---|---|
+| 001 | TypeScript/Next.js/Node/PostgreSQL/Prisma | Validated — no conflict found | Consistent with ADR-001-MODULAR-MONOLITH, OPENAPI_REQUIREMENTS, CONTAINERIZATION. No SDLC document names a conflicting stack. Recommended for owner acceptance. |
+| 002 | External auth + application RBAC | Validated — no conflict, but incomplete | Chain matches SEC-004/API-006 exactly. **Sub-decision still open:** no specific identity-provider vendor is named — must be resolved before Phase 2. |
+| 003 | Redis + BullMQ | Validated — no conflict found | Matches WORKER_ARCHITECTURE's six worker types exactly; resolves the Redis-vs-Job-Queue ambiguity flagged in the Phase 0 assessment. Recommended for owner acceptance. |
+| 004 | AI abstraction + OpenAI initial provider | Validated — no architectural conflict; **owner sign-off required** | The abstraction pattern matches AI-001/ADR-002 ("AI is not the security boundary"). Naming OpenAI is a new vendor/cost/data-processing commitment not addressed anywhere in Gates 0–11 — see EXTERNAL_DEPENDENCIES.md data-sharing note. Not a technical conflict, but not a decision Claude Code can finalize alone. |
+| 005 | Meta version/capabilities verified before pinning | **Verified 2026-09-04** | Live-verified against developers.facebook.com. Current: v26.0 (2026-07-29, latest); v25.0 (2026-02-18, supported to 2028-07-29, used in Meta's own current examples — recommended initial target). Capabilities, permissions, and breaking changes recorded in TECH_STACK.md. Final pin still deferred to Phase 3 per ADR-005's own scope. |
+| 006 | AWS | Validated — no architectural conflict; **owner sign-off required** | CLOUD_INFRASTRUCTURE.md explicitly left the vendor "intentionally implementation-stage configurable" — choosing AWS now is in-scope for this stage, but is a real cost/vendor-lock-in commitment the owner should be aware is being made here, not purely an engineering default. |
+| 007 | GitHub + GitHub Actions | Validated — no conflict found | Matches CICD.md's required stage sequence. Recommended for owner acceptance. |
+| 008 | Conservative financial defaults | Owner approval required (unchanged) | Consistent with BR-005/006/007/017 — correctly self-scoped as engineering defaults only, not authorized spend limits. See FINANCIAL_POLICY_DECISION.md. |
+| 009 | RPO/RTO baseline | Proposed baseline — pending owner validation before production | Consistent with DEVOPS-011's explicit deferral of numeric RPO/RTO to business requirements. Baseline values are a reasonable starting point, not yet validated by the owner. |
+| 010 | Git initialization | **Implemented 2026-09-04** | Local `git init` complete, `main` branch, `.gitignore`, `.editorconfig`, root `README.md` added and committed. Remote creation + branch protection deferred — requires the owner's GitHub org/account and is a shared/external action outside Phase 1A's read-mostly scope. |
+
+No Foundation implementation should depend on an unresolved decision that changes its security or data model. As of this pass: ADR-002 (identity provider vendor) and ADR-004/006 (named third-party vendor commitments) are the decisions most likely to affect Phase 1–2 security/data-model choices and should be resolved first.

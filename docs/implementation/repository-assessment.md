@@ -1,0 +1,310 @@
+# Repository Assessment — Phase 0
+
+**Project:** AI Marketing Manager (production-grade AI platform for managing Meta advertising campaigns through a chat-first interface)
+**Assessment date:** 2026-09-04
+**Scope:** Full inspection of the repository at `E:\Meta Marketing Agent` and comparison against the documented SDLC architecture (Gates 0–11).
+**Prepared per:** `CLAUDE_PROMPT_PHASE_0.md`, `CLAUDE_CODE_MASTER_INSTRUCTIONS.md`, `REPOSITORY_FIRST_WORKFLOW.md` (docs/12-development-readiness).
+
+---
+
+## 0. Executive Summary
+
+1. **This repository currently contains no application code.** It holds exactly 172 Markdown files organized into 12 "gate" folders (`ai-marketing-manager-gate-0-docs` … `gate-11-development-readiness`), each mirroring one stage of the project's SDLC (`docs/00-governance` … `docs/12-development-readiness`). There is no `package.json`, no source file in any language, no Dockerfile, no CI config, no `.env`, no OpenAPI spec, and **no `.git` directory** — the folder is not yet a version-controlled repository at all.
+2. **Every one of the 12 gates is explicitly unapproved.** Every architecture document in the corpus carries the header `Status: Draft for Approval` (or `Version 1.0` with no approval field), and every `*_GATE_CHECKLIST.md` in the repository has **100% of its items unchecked**, with an explicit closing line of `Gate status: Draft for Approval`. The repository's own process document, `SDLC.md`, states: *"Do not begin production feature development until Gate 0 and subsequent required design gates are approved."* This is a **blocking governance discrepancy** between the Phase 0 prompt's framing ("the project has an approved SDLC architecture") and the actual, self-reported status of every document in it. See §9.
+3. Consequently, "baseline validation" (lint/typecheck/test/build) has **no commands to run** — there is nothing installed, configured, or built yet. This is reported honestly in §4 rather than skipped.
+4. The documentation itself is unusually complete and internally consistent for a pre-code repository: it specifies, with precision, the security boundary between the AI layer and the deterministic application layer, the tenant-isolation model, the action/approval lifecycle, the Meta integration adapter pattern, and the API contract shape. It deliberately leaves the concrete technology stack (language, backend framework, frontend framework, LLM provider, cloud provider, CI platform, IaC tool, secret manager, queue technology) **unspecified**, consistent with `REPOSITORY_STRUCTURE.md`'s instruction to "adapt names to the existing repository after Phase 0 assessment." A consolidated list of every such open decision is in §10.
+5. No secrets, credentials, or committed sensitive data were found anywhere in the corpus.
+
+**Bottom line:** this is a greenfield build. Phase 0's job is not to reconcile existing code with target architecture (there is no existing code) — it is to (a) confirm and record that fact, (b) extract the target architecture precisely enough to make Phase 1 tractable, and (c) surface the gate-approval discrepancy for an explicit decision before any feature code is written.
+
+---
+
+## 1. Repository Inventory
+
+| Category | Finding |
+|---|---|
+| Frontend framework/version | **None implemented.** Target: unspecified in all 16 UI/UX documents (Gate 8) and in `FRONTEND_ARCHITECTURE.md` (Gate 2) — only a layered pattern (Pages/Routes → Feature Components → Domain UI State → API Client → Backend API) and a 24-component design-system inventory are mandated, no framework named. |
+| Backend framework/version | **None implemented.** Target: no language or framework named in any of the 172 documents. |
+| Programming language(s) | **None** — the repository contains only Markdown (172 `.md` files) and no source code in any language. |
+| Package manager | **None** — no `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, or equivalent exists anywhere. |
+| Monorepo/workspace structure | **None implemented.** A target structure exists as a *recommendation only* in `REPOSITORY_STRUCTURE.md` (`apps/{web,api}`, `packages/{contracts,ui,domain,config}`, `services/{ai,meta}`, `workers/`, `migrations/`, `tests/{unit,integration,contract,e2e,security,ai-evals}`, `docs/`, `infrastructure/`, `scripts/`), explicitly caveated: "Do not force this structure if the inspected repository already has a sound architecture" — moot here since none exists. |
+| Existing applications | **None.** |
+| Existing services/workers | **None implemented.** Target: modular monolith (API/BFF) + independent background workers (Sync, Insights, Optimization, Report, Webhook, Maintenance) per ADR-001 and `WORKER_ARCHITECTURE.md`. |
+| Database technology | **None implemented.** Target: **PostgreSQL** as canonical store — named consistently in `CLAUDE.md`, `DATA_ARCHITECTURE.md` (Gate 3), and `DEVOPS_ARCHITECTURE.md` (Gate 10); this is the single most consistently-named concrete technology in the whole corpus. Redis is named as an optional supporting cache/queue-coordination store. |
+| ORM/query layer | **Not specified anywhere** in any of the 172 documents. |
+| Migration system | **None implemented.** Target: "versioned migrations," an expand/contract pattern for breaking changes, and a 6-step rollout sequence are mandated (`DATA_MIGRATIONS.md`, `DEVOPS-007`) — no specific tool (Prisma Migrate, Flyway, Alembic, etc.) is named. |
+| Authentication/session implementation | **None implemented.** Target: "one centrally managed, well-supported authentication mechanism" (`AUTHENTICATION_AND_SESSION.md`, SEC-003) — no specific protocol/provider named. Server-controlled sessions, MFA by risk tier, and step-up auth for sensitive operations are required in pattern only. |
+| Authorization/RBAC implementation | **None implemented.** Target: a fully specified authorization *chain* (User → Workspace Membership → Role/Permissions → Resource Scope → Operation → Policy) with example roles (OWNER/ADMIN/MARKETER/ANALYST/APPROVER/VIEWER, explicitly "product concepts" pending a real permission matrix). |
+| Existing Meta integration | **None implemented.** Target: single `MetaClient`/`MetaPort` adapter behind the application, OAuth-style connect flow, no Meta Graph/Marketing API version pinned anywhere in the 172 documents (an explicit, deliberate deferral per `META_INTEGRATION_ARCHITECTURE.md`). |
+| Existing AI/LLM integration | **None implemented.** Target: typed tool-calling architecture behind an "AI Gateway"; no LLM vendor or model is named in any document. |
+| API architecture | **None implemented.** Target: REST/JSON, versioned at `/api/v1`, contract-first via OpenAPI, `{data,meta}`/`{error:{code,message,request_id}}` envelopes (Gate 7, `API_ARCHITECTURE.md`). |
+| Existing routes/endpoints | **None.** A full target endpoint catalog exists in `API_ENDPOINT_CATALOG.md` (auth/session, workspaces, Meta connections, ad accounts/campaigns/ad sets/ads, insights, chat/conversations, actions, approvals, reports, Meta webhooks) but is explicitly not frozen ("exact shapes may be adjusted during API review"). |
+| Background jobs/queues | **None implemented.** Target: queue-fed worker pool; no queue technology named (Redis is mentioned generically for "cache/coordination/queue support as appropriate" — the docs themselves flag this as ambiguous). |
+| Caching | **None implemented.** Target: Redis, generically. |
+| File/object storage | **None implemented.** Target: generic "object storage" for report artifacts; no vendor named. |
+| Logging | **None implemented.** Target: structured logs, correlation IDs (request/trace/workspace/AI-run/action/Meta-operation ID), explicit prohibition on logging secrets. |
+| Error handling | **None implemented.** Target: stable `{code,message,request_id}` error taxonomy; canonical provider-error classes (AUTHENTICATION/AUTHORIZATION/RATE_LIMIT/VALIDATION/NOT_FOUND/CONFLICT/TRANSIENT/PROVIDER_UNAVAILABLE/UNKNOWN). |
+| Testing framework | **None implemented.** Target: test pyramid (unit/integration/contract/E2E/manual) plus security, AI-evaluation, performance, and resilience as cross-cutting layers — no specific framework (Jest/Vitest/pytest/Playwright/Cypress/etc.) named anywhere. |
+| E2E framework | **None implemented.** Target: a defined 10-step critical E2E journey and 8 negative E2E cases (`UI_TEST_STRATEGY.md`); no tool named. |
+| Linting | **None implemented.** Referenced only generically ("lint" as a CI stage and DoD item); no linter/config named. |
+| Type checking | **None implemented.** Referenced only generically ("typecheck" as a CI stage and DoD item); implies but does not name a statically-typed language. |
+| Build system | **None implemented.** |
+| CI/CD | **None implemented.** Target: a fixed logical pipeline (Commit → Lint/Typecheck → Unit → Security/Secret Scan → Build → Integration/Contract → AI Regression → Deploy Dev → E2E → Deploy Staging → Release Approval → Production → Smoke) per `CICD.md`; no CI product named. |
+| Docker/containerization | **None implemented.** Target: reproducible, pinned, non-root (where feasible), minimal images with health/readiness endpoints; logical services = frontend, API, worker, scheduler, optional AI runtime. No orchestrator named. |
+| Infrastructure/deployment configuration | **None implemented.** Target: IaC, cloud-vendor-neutral by design ("intentionally implementation-stage configurable" — `CLOUD_INFRASTRUCTURE.md`). |
+| Environment variables | **None implemented.** A naming *template* exists (`ENVIRONMENT_VARIABLES.md`, DEVREADY-006): `APP_ENV`, `APP_URL`, `API_URL`, `LOG_LEVEL`, `DATABASE_URL`, session/OAuth config, Meta app ID/secret/webhook config/API version, AI provider/model config, storage/queue config — explicitly "names are examples, adapt to the selected stack." |
+| Secret management | **None implemented.** Target: "managed secret system" / KMS preferred, no vendor named; hard rules against committing `.env` files or logging secrets. |
+
+---
+
+## 2. Existing Code Assessment
+
+There is no code to assess. Specifically, none of the following exist in the repository: completed functionality, partially implemented functionality, placeholder/mock functionality, code-level technical debt, duplicated logic, code-level architectural inconsistencies, or existing tests. There are consequently no "fragile areas" and nothing that qualifies as "existing work" to preserve under the Master Instructions' rule 6 ("Do not delete or rewrite existing work without evidence").
+
+Two things *do* exist and warrant honest characterization:
+
+- **The documentation itself is the asset to preserve.** It is detailed, cross-referenced, and largely self-consistent (see §9 for the one recurring, load-bearing caveat — unapproved status). Phase 1+ should treat it as authoritative and, per `CLAUDE.md`, stop and report rather than silently resolve any conflict found within it.
+- **Minor internal documentation inconsistencies** (not code, but worth recording since they will surface as implementation ambiguities):
+  - `CLAUDE.md` names PostgreSQL "unless approved otherwise," while the more formal `DEVELOPMENT_PRINCIPLES.md` states only the canonical-data-model *principle* without naming PostgreSQL by name — a specificity gap, not a contradiction (Gate 3 and Gate 10 do independently name PostgreSQL, so the decision is corroborated).
+  - `SYSTEM_ARCHITECTURE.md`'s own diagram shows "Job Queue" as a node distinct from Redis, while `INTEGRATION_ARCHITECTURE.md` lists Redis generically under infrastructure for "cache/coordination/queue support as appropriate" — it is ambiguous whether Redis is meant to back the job queue or a separate, unnamed queue technology is intended. This should be resolved as an explicit decision in Phase 1, not assumed.
+  - Several Meta-domain documents (`META_INTEGRATION_ARCHITECTURE.md`, `META_OAUTH_FLOW.md`, `META_WEBHOOKS.md`) contain unresolved literal citation-marker artifacts (e.g. `citeturn1search1turn1search13`) embedded in prose describing specific Meta platform behavior (ad-account webhook support, token-debugging tooling). These read as leftover research citations from document generation and should be treated as **unverified claims about live Meta platform behavior** until re-checked against current Meta documentation — flagged explicitly in `META_APP_REVIEW_READINESS.md` as a required pre-implementation step regardless.
+
+**Areas that should NOT be rewritten:** none apply yet (no code exists). Going forward, the documentation corpus itself should not be rewritten to fit an implementation convenience — per `CHANGE_MANAGEMENT.md`, any change to it is a "Major" change requiring impact analysis and approval, even from Claude Code.
+
+---
+
+## 3. Architecture Comparison — Current State vs. Target State
+
+| Area | Current State | Target State | Gap | Risk | Recommended Action |
+|---|---|---|---|---|---|
+| Repository / VCS | No `.git`; plain folder | Version-controlled monorepo per `REPOSITORY_STRUCTURE.md` | 100% | Low (mechanical) | `git init` + adopt target layout at start of Phase 1 |
+| Language / runtime | None | Unspecified (open decision) | 100% | Medium — blocks everything downstream | Select in Phase 1 as an explicit, recorded decision (ADR-style), not implied by convenience |
+| Backend framework | None | Unspecified; must support modular monolith + hexagonal layering (ADR-001, `BACKEND_ARCHITECTURE.md`) | 100% | Medium | Select in Phase 1; must support ports/adapters cleanly |
+| Frontend framework | None | Unspecified; must support chat-first UI, 24-component design system, WCAG 2.2 AA | 100% | Medium | Select in Phase 1/6 |
+| Database | None | PostgreSQL (well-corroborated across Gates 0, 3, 10) | 100% | Low (decision already effectively made) | Provision in Phase 1; do not re-litigate |
+| ORM / query layer | None | Unspecified | 100% | Low–Medium | Select alongside language/framework in Phase 1 |
+| Migrations | None | Versioned, expand/contract, staged destructive changes; tool unspecified | 100% | Medium — schema is central to tenant isolation | Select tool in Phase 1; migration process must be exercised before Phase 2 |
+| Multi-tenancy / workspace isolation | None | Workspace-scoped rows in a shared schema; app-layer enforcement mandatory, DB row-level security optional defense-in-depth only | 100% | **High** — six named cross-tenant attack scenarios must fail safely from day one | Build tenant-scoping into the data-access layer as a first-class, untestable-to-bypass primitive in Phase 1–2, not bolted on later |
+| Authentication | None | "One centrally managed" mechanism; MFA by risk tier; secure server-controlled sessions | 100% | High (identity is the first attack surface) | Phase 2 — select and implement before any protected resource exists |
+| Authorization / RBAC | None | Full server-side chain (auth→membership→permission→resource-ownership→operation→policy); roles are placeholders pending a real permission matrix | 100% | High | Phase 2 — must precede any mutating endpoint |
+| Meta OAuth / connection | None | Full OAuth-style connect/discover/select/sync/disconnect flow; adapter-isolated; API version deliberately unpinned | 100% | High (credential handling, CSRF/state) | Phase 3 — pin a Graph API version at implementation time per `META_APP_REVIEW_READINESS.md`'s explicit warning that Meta's requirements can change |
+| Meta data sync | None | Canonical entity model decoupled from Meta shapes; hybrid webhook + reconciliation sync | 100% | Medium | Phase 4 |
+| AI / LLM integration | None | Typed tool-calling behind an AI Gateway; AI is explicitly *not* the security boundary; provider/model unspecified | 100% | **High** — this is the platform's core differentiator and its core risk surface (prompt injection, excessive agency, hallucinated execution) | Phase 8–9; select provider/model only after the deterministic policy/approval boundary (Phase 2, 5, 9) already exists and is tested — do not build AI execution paths before the guardrails that constrain them |
+| API layer | None | REST/JSON `/api/v1`, contract-first OpenAPI, idempotency + authorization on every mutating endpoint | 100% | Medium–High | Phase 5 — write the OpenAPI contract before implementation per `OPENAPI_REQUIREMENTS.md` |
+| Background jobs / queue | None | Independent worker pool, at-least-once delivery, idempotent handlers; queue technology unspecified/ambiguous | 100% | Medium | Resolve the Redis-vs-separate-queue ambiguity explicitly in Phase 1 |
+| Action / approval governance | None | Full state machine (PROPOSED→…→VERIFIED) with cryptographic-style approval binding to action version/hash | 100% | **High** — this is the control that prevents unauthorized ad spend | Phase 9; must be deterministic and independently testable from the AI layer |
+| Financial / spend controls | None | Category-based limits (per-action, %, daily, account, campaign, bulk, cooldown); no numeric thresholds defined anywhere in the corpus | 100% | **High** | Numeric limits must be defined as a product decision (not inferred by Claude Code) before Phase 9 ships |
+| Audit logging | None | Append-only, access-restricted, survives Meta disconnection | 100% | High (compliance/forensics) | Build as part of the Phase 1 foundation, not retrofitted |
+| Secrets management | None | Managed secret system / KMS preferred; strict never-log/never-commit rules | 100% | High | Phase 1 — choose and wire up before any credential (even a dev DB password) is handled |
+| Observability | None | Logs+metrics+traces with correlation IDs across request/workspace/AI-run/action | 100% | Medium | Phase 1 foundation, extended through each subsequent phase |
+| CI/CD | None | Fixed staged pipeline with security/secret scanning and AI regression gates | 100% | Medium | Phase 1 — stand up a minimal pipeline immediately so every subsequent phase runs it |
+| Testing (all levels) | None | Full pyramid + security/AI-eval/performance/resilience cross-cutting; 15 areas marked release-blocking with zero exceptions | 100% | High | Tests must land with each phase's code per `DEVELOPMENT_PRINCIPLES.md`, not as a later phase |
+| Compliance framework | Not addressed anywhere in 172 docs | No named regime (SOC 2/GDPR/CCPA/PCI) in any gate | Undefined | Medium (unknown unknown) | Flag to stakeholders — silence across all 12 gates likely means "not yet decided," not "not applicable," given the platform touches ad spend and third-party (Meta) data |
+| **Gate approval status** | **All 12 gates: "Draft for Approval," 0% of checklist items checked** | All 12 gates formally approved per `SDLC.md` | 100% | **Blocking** | See §9 — resolve before Phase 1 begins |
+
+---
+
+## 4. Baseline Validation
+
+Per the repository-first workflow, the following commands were attempted or considered. Because no package manifest, source tree, or build tooling exists anywhere in the repository, there is nothing to install, lint, type-check, test, or build. This is reported as-is rather than masked:
+
+```text
+Install/dependency validation:
+Command: (none — no package.json, requirements.txt, go.mod, or any manifest found anywhere in the repository)
+Result: N/A — not applicable, no dependency manifest exists
+
+Lint:
+Command: (none available)
+Result: N/A — no linter configuration or source files exist
+
+Typecheck:
+Command: (none available)
+Result: N/A — no source files or type-checker configuration exist
+
+Unit tests:
+Command: (none available)
+Result: N/A — no test framework or test files exist
+
+Integration tests:
+Command: (none available)
+Result: N/A — no test framework or test files exist
+
+E2E tests:
+Command: (none available)
+Result: N/A — no test framework, browser automation config, or app to exercise exist
+
+Production build:
+Command: (none available)
+Result: N/A — no build tooling or entry point exists
+```
+
+Supporting checks actually run:
+
+```text
+Command: find . -not -path '*/node_modules/*' -type f \( -iname 'package.json' -o -iname '*.env*' -o -iname 'Dockerfile*' -o -iname 'docker-compose*' -o -iname '*.tf' -o -iname '*.js' -o -iname '*.ts' -o -iname '*.py' -o -iname '*.go' -o -iname '*.sql' \)
+Result: PASS (ran successfully) — zero matches; confirms no code/config artifacts exist
+
+Command: git -C "E:\Meta Marketing Agent" status
+Result: FAIL — "fatal: not a git repository (or any of the parent directories): .git"
+Interpretation: repository is not under version control yet; `git init` is a Phase 1 prerequisite, not performed during this read-only assessment
+```
+
+**Conclusion:** baseline health cannot be measured because there is no baseline to measure. Phase 1 must establish the first installable/lintable/testable/buildable state, at which point this section's commands become real and must all be reported as PASS before Phase 1 is considered complete.
+
+---
+
+## 5. Security Baseline
+
+Performed safely, non-destructively, read-only:
+
+- **Secrets committed to repository:** none found. A recursive case-insensitive search across all 172 Markdown files for `api_key|secret|password|token` followed by a plausible credential-shaped value returned zero matches.
+- **Unsafe environment handling:** not applicable — no `.env` or environment-consuming code exists.
+- **Exposed API credentials:** none found.
+- **Client-side Meta credentials:** not applicable — no client code exists. The target architecture explicitly and repeatedly (Gates 2, 5, 6, 7, 8) forbids the browser or the AI from ever holding Meta credentials; this must be verified again once a frontend exists.
+- **Missing authorization / possible IDOR / BOLA:** not applicable — no endpoints exist yet. The target architecture requires object-level authorization (auth→membership→permission→resource-ownership→operation) on every request and names BOLA/IDOR testing as release-blocking (`API_TEST_STRATEGY.md`, `CRITICAL_TEST_MATRIX.md`) — this must be the first security property verified once Phase 5 (API) ships.
+- **Cross-workspace data leakage:** not applicable yet — no data layer exists. Six specific cross-tenant attack scenarios are pre-specified in `TENANT_ISOLATION.md`/`TENANT_SECURITY.md` and must become automated negative tests starting in Phase 2.
+- **Unsafe webhook handling:** not applicable yet — no webhook endpoint exists. Target requires signature/authenticity validation, fast-ack + async processing, and an explicit rule that webhook bodies are never trusted as authorization (`META_WEBHOOKS.md`, `WEBHOOK_API.md`).
+- **Missing rate limiting:** not applicable yet — target defines an 8-layer rate-limiting model (Edge/User/Workspace/Route/AI-request/Tool-invocation/Mutation/Meta-account) with no concrete numeric thresholds decided (`RATE_LIMITING_ABUSE.md`, `API_RATE_LIMITS.md`).
+- **Unsafe AI tool execution:** not applicable yet — no AI integration exists. The target design already anticipates this risk in unusual depth (ten named AI-specific threats in `AI_SECURITY.md`, an explicit "AI is not the security boundary" principle repeated in Gates 2, 4, 6, 7) — this is a documentation strength, not a current-state finding.
+- **Sensitive information in logs:** not applicable yet — no logging exists. Target rules are explicit and repeated across nearly every gate: never log tokens, secrets, session identifiers, or full sensitive payloads.
+
+**Security-relevant blocker for Phase 1:** because the repository is not yet a git repository, none of the standard pre-commit/CI secret-scanning tooling mandated for CI/CD (`CICD.md`, `SECURITY_TESTING.md`) can be wired up until version control exists — sequence `git init` + secret-scan hook installation as one of the very first Phase 1 actions, before any credential (even a local dev `.env`) is created.
+
+---
+
+## 6. Database Assessment
+
+**Schema:** none exists. Target schema is fully specified at the entity level in `ERD_SPECIFICATION.md` / `SCHEMA_DESIGN.md` (Gate 3), spanning 15 data domains: Identity (users, workspace_memberships, workspaces), Integration (meta_connections, meta_assets, sync_runs, webhook_events), Advertising (ad_accounts → campaigns → ad_sets → ads → creatives), Analytics (insight_daily fact table + metric definitions), AI (conversations, messages, ai_runs, ai_tool_calls), Governance (actions, action_attempts, approvals, policy_evaluations, audit_events, emergency_stop state), Goals (goals, goal_metrics, optimization_runs, optimization_opportunities), Reporting (reports, report_runs, report_artifacts).
+
+**Tables/entities:** target hierarchy Business/Access Context → Ad Account → Campaign → Ad Set → Ad → Creative, with every external entity carrying internal ID, workspace ID, Meta external ID, parent internal ID, source/provider, status, `source_updated_at`, `last_synced_at`.
+
+**Relationships:** workspace is the mandatory tenant-scoping root for all tenant-owned tables; internal application identity is strictly separated from Meta external identity (external IDs are integration identifiers only, never authorization credentials).
+
+**Indexes:** target policy requires indexing `workspace_id`, `workspace_id+status`, `workspace_id+external_id`, `parent_id+external_id`, and relevant timestamps on high-volume tenant-owned tables, plus workspace/account/campaign/ad-set/ad+date on the insights fact table — driven by actual access patterns, not blanket-applied.
+
+**Constraints:** target requires FK integrity, unique external-identity constraints, valid-lifecycle-value constraints, non-negative-monetary constraints, valid-timestamp constraints, and mandatory workspace-ownership constraints; unique constraints must protect idempotency for sync records, webhook event IDs, and action idempotency keys.
+
+**Migrations:** none exist. Target process: versioned, never edit an applied migration, backward-compatible for rolling deploys, destructive changes staged separately, async large backfills, 6-step rollout (add structure → deploy compatible app → backfill → validate → switch reads/writes → remove old structure).
+
+**Tenant/workspace model:** shared-schema, `workspace_id`-scoped rows, application-layer authorization mandatory on every access; DB-level row-level security is explicitly optional defense-in-depth, never a substitute.
+
+**Audit model:** target `audit_events` table, append-only, restricted modification/deletion, independent of normal business-record deletion lifecycle, must survive Meta disconnection, must avoid storing secrets or excessive sensitive payloads.
+
+**Action model:** target `actions`/`action_attempts`/`approvals`/`policy_evaluations` tables implementing the state machine `PROPOSED → VALIDATED → POLICY_EVALUATED → PENDING_APPROVAL → APPROVED → EXECUTING → VERIFIED` (terminal alternates `REJECTED/FAILED/VERIFICATION_FAILED/CANCELLED/EXPIRED`); approvals bind to the exact action version/hash.
+
+**Meta connection model:** target `meta_connections` table storing encrypted/reference-only credential material, connection status, and capability set; raw credentials retrievable only by the Meta integration service.
+
+**What is missing:** everything — this is a specification, not an implementation. Two design decisions are explicitly left open by the docs themselves and should be resolved in Phase 1: (a) migration tooling, (b) whether `roles`/`permissions` is a static enum on `workspace_memberships.role` or a fully dynamic table.
+
+---
+
+## 7. AI Assessment
+
+**LLM provider / models:** not specified anywhere in the 172 documents. `MODEL_STRATEGY.md` requires the application to stay "provider-neutral where practical" and defines three routing tiers (Lightweight / General Reasoning / High-Risk) without naming any vendor or model.
+
+**Prompts:** none exist. Target: a mandatory 7-layer prompt structure (system policy → agent role → tool contracts → workspace context → task context → retrieved data → user request) with required versioning metadata (identifier, version, status, owner, change reason, evaluation results) per production prompt.
+
+**AI orchestration:** none exists. Target pipeline: User Message → Conversation Service → Context Builder → Intent/Task Router → Agent Orchestrator → Planner → Tool Selection → Typed Tool Execution → Observation → Reasoning/Next Step → Final Response, with a parallel, stricter mutation pipeline (Plan → Action Compiler → Schema Validation → Authorization → Policy Engine → Approval Engine → Execution → Verification → Outcome). Five agent modes (Answer/Analysis/Planning/Action/Optimization) are application-controlled; the model cannot self-elevate privilege.
+
+**Tool/function calling:** none exists. Target: every tool requires an explicit name, typed input/output schema, authorization requirement, risk classification, timeout, retry policy, audit requirement, and idempotency behavior. The AI must never receive arbitrary SQL, arbitrary HTTP, shell access, credential access, or unrestricted code execution. Mutation proposals pass through a **Deterministic Action Compiler** that independently validates and converts them to canonical commands — the model's output is never trusted directly.
+
+**Conversation persistence:** none exists. Target: `conversations`, `messages`, `ai_runs`, `ai_tool_calls` tables; persisted memory restricted to explicit user preferences (policy-permitting), approved workspace configuration, goal definitions, continuity-relevant action history, and relevant report context — model memory is never authoritative business state.
+
+**Tool authorization:** target requires every tool call to be re-authorized server-side per call using the initiating user's *current* permissions — the AI never inherits standing privilege.
+
+**AI evaluation:** none exists. Target: ten evaluation categories (intent classification, entity resolution, tool selection, argument generation, policy awareness, approval behavior, data-grounded reasoning, report quality, truthfulness, prompt-injection resistance) against a versioned "golden dataset," with mandatory regression testing before any prompt/model/tool-contract change ships. Explicit safety rule: *"A model response claiming an action succeeded is a failure if the system's execution/verification record says otherwise."*
+
+**Prompt-injection defenses:** this is the most thoroughly specified topic in the entire corpus, restated independently in Gates 2, 4, 6, 7, 8, and 9. Core principle (`AI_SECURITY.md`): *"Assume the model can be wrong or manipulated; the application must remain safe anyway."* All Meta-sourced content (campaign names, ad copy, creative text, comments, URLs) must be treated as untrusted **data**, never as instructions, using an explicit-boundary prompt structure (SYSTEM POLICY / AGENT RULES / TOOL CONTRACTS / AUTHORIZED CONTEXT / UNTRUSTED EXTERNAL DATA / USER REQUEST) the model cannot use to redefine higher-priority rules. Ten named AI-specific threats are enumerated with controls in `AI_SECURITY.md` (prompt injection, malicious campaign/ad text, indirect prompt injection, tool argument manipulation, excessive agency, data exfiltration, cross-tenant context leakage, hallucinated execution, tool-loop abuse, denial-of-wallet/cost abuse).
+
+**What is missing:** the actual implementation, an actual LLM provider/model selection, actual numeric guardrail values (max budget change %, daily spend cap, cooldown period, confidence thresholds, tool-call/step limits — all named as required but none quantified anywhere in the corpus), and a defined "approved model path" fallback mechanism referenced but not specified in `AI_FAILURE_RECOVERY.md`.
+
+**Do not add new AI tools during Phase 0** — none were added; this section only records target-state findings.
+
+---
+
+## 8. Meta Assessment
+
+**OAuth implementation:** none exists. Target: application-generated `state` → redirect to Meta authorization → callback → state validation → token exchange → asset discovery → account selection → encrypted credential storage → initial sync. State must be unpredictable, short-lived, session-bound, single-use.
+
+**Token storage:** none exists. Target: encrypted at rest or via a dedicated secret-management mechanism; tokens must never reach frontend/browser code, AI prompts, conversation messages, ordinary logs, or analytics responses; only the Meta integration service may retrieve raw credential material.
+
+**Meta API client:** none exists. Target: a single adapter (`MetaClient`/`MetaPort`, implemented via `MetaOAuthAdapter`/`MetaMarketingApiAdapter`/`MetaWebhookAdapter`) owns authentication, request construction, pagination, retries, response normalization, error classification, capability detection, and API-version isolation. The domain layer must never construct raw Meta URLs or hold tokens directly.
+
+**API version:** **not specified anywhere in any of the 172 documents.** This is explicit and deliberate ("configuration/release concern, not hard-coded") but means the concrete API surface to build against is genuinely undetermined until an implementation-time decision is made and revalidated against current Meta documentation (a checklist item in `META_APP_REVIEW_READINESS.md` that is itself still unchecked).
+
+**Permissions:** target defines a capability-based model (e.g. `READ_AD_ACCOUNT`, `READ_CAMPAIGN`, `READ_INSIGHTS`, `CREATE_CAMPAIGN`, `UPDATE_BUDGET`, `UPDATE_STATUS`, `CREATE_AD_SET`, `CREATE_AD`, `MANAGE_CREATIVE`, `RECEIVE_AD_ACCOUNT_WEBHOOKS`) explicitly labeled as an *example*, pending verification against live Meta app-review requirements.
+
+**Account discovery:** none exists. Target: post-OAuth business/ad-account discovery with user selection of which accounts to connect.
+
+**Synchronization:** none exists. Target: hybrid model — initial full sync + periodic incremental sync + webhook-triggered targeted sync + periodic reconciliation (reconciliation is explicitly the source of correctness; webhooks "complement, not replace" it) + freshness tracking exposed to every analytics response.
+
+**Webhook handling:** none exists. Target: fixed route `POST /webhooks/meta`, ten-step pipeline (receive → validate authenticity → validate object/topic → deterministic event identity → persist minimal envelope → fast ack → async queue → dedupe → reconcile entity → audit/telemetry). Webhook bodies are never trusted as authorization.
+
+**Retry logic:** none exists. Target: retries limited to transient/network/appropriate-rate-limit failures only (never invalid credentials, permission denial, validation errors, or unsupported operations); exponential backoff with jitter, bounded attempts, per-account circuit-breaker-style degradation.
+
+**Rate-limit handling:** none exists. Target: adapter-level protection of Meta's own provider-side limits, distinct from and in addition to the application's own internal rate limits.
+
+**Mutation execution:** none exists. Target: MVP operations are explicitly scoped by an operations matrix — performance reads are read/recommend-only (no MVP execution); status changes are execute-capable with configurable approval; budget updates, structural creation, creative changes, bulk changes, and scheduled optimization all require approval initially; destructive deletes are **not executable** in the MVP. **No real advertising mutations were made or attempted during this assessment**, consistent with the Phase 0 rules.
+
+**Verification:** target requires read-after-write verification for high-impact operations, with persisted `VERIFIED`/`VERIFICATION_FAILED` outcome states — the platform must never report a mutation as successful without this.
+
+**What is missing:** the entire implementation, a pinned Graph/Marketing API version, confirmed real capability availability (the documented capability list is explicitly illustrative), and resolution of the embedded unresolved citation artifacts noted in §2 regarding specific Meta platform behaviors.
+
+---
+
+## 9. Governance / Approval Status — Cross-Cutting Finding
+
+This finding recurs identically across all 11 domains extracted and is significant enough to warrant its own section rather than burial in §3's table.
+
+Every single architecture document reviewed — governance, product/requirements, system architecture, data, AI, Meta integration, security, API, UI/UX, testing, and DevOps — carries a header of **`Status: Draft for Approval`** (or `Version 1.0` with no approval field at all), and every one of the eleven `*_GATE_CHECKLIST.md` files present in the repository has **every single item unchecked**, closing with the identical line: **`Gate status: Draft for Approval.`**
+
+The repository's own governing process document, `docs/00-governance/SDLC.md`, states without qualification: *"Do not begin production feature development until Gate 0 and subsequent required design gates are approved."* `docs/00-governance/README.md` repeats this. `docs/12-development-readiness/GATE_11_CHECKLIST.md` — itself unchecked — lists "Development readiness package reviewed" and "No unresolved architecture blockers" as pending items, yet also states an overall `Gate status: Ready for Implementation`, which is the one internal inconsistency worth flagging: Gate 11's own checklist items are unchecked even though its summary line claims readiness.
+
+**This is not a defect in the documentation** — architecturally, the corpus is unusually thorough and consistent for its stage. It is a **process/authorization gap**: the documents describe themselves as pending sign-off, while the Phase 0 task that requested this assessment frames them as "the approved SDLC architecture." Per the repository's own rules (`CLAUDE.md`: *"If documentation conflicts, STOP and report the conflict instead of guessing"*), this discrepancy is reported here rather than silently resolved in either direction.
+
+**This does not block Phase 0** (a read-only assessment). It is recorded as **Blocker #1** for Phase 1 in the companion `implementation-plan.md`, pending an explicit decision from the project owner on how to proceed (e.g., treat the current draft content as authoritative and formally approve it, or route it through an actual approval step first).
+
+---
+
+## 10. Consolidated List of Open Technology Decisions
+
+The following concrete technology choices are **deliberately or effectively left open** across the entire 172-document corpus and must be made explicitly — not inferred — before or during Phase 1, since nothing downstream can be implemented without them:
+
+| Decision | Status in docs |
+|---|---|
+| Backend language & framework | Not named anywhere |
+| Frontend framework | Not named anywhere |
+| ORM / query layer | Not named anywhere |
+| Migration tool | Not named anywhere ("versioned migrations" required, tool open) |
+| Application authentication provider/protocol | Not named ("one centrally managed mechanism" only) |
+| Queue/broker technology | Ambiguous — "Job Queue" node vs. Redis "as appropriate," never disambiguated |
+| Secret manager / KMS | Not named ("managed secret system," "prefer managed KMS") |
+| LLM provider & model(s) | Not named anywhere; only abstract routing tiers |
+| AI orchestration framework | Not named — custom pipeline described, no library |
+| Meta Graph/Marketing API version | Not named anywhere — deliberate, deferred to implementation with mandatory re-verification |
+| Cloud provider | Explicitly deferred ("intentionally implementation-stage configurable") |
+| IaC tooling | Not named ("infrastructure as code" required, tool open) |
+| CI/CD platform | Not named — pipeline stages defined, product open |
+| Container orchestrator | Not named |
+| Observability/APM vendor | Not named — three pillars + correlation IDs required, tool open |
+| Charting library | Not named (UI requires an accessible "Chart" component) |
+| Testing frameworks (unit/integration/E2E/a11y) | Not named at any level |
+| Object storage vendor | Not named |
+| Numeric guardrails (spend limits, cooldowns, rate limits, SLAs, confidence thresholds, RPO/RTO) | **Not quantified anywhere in the entire corpus** — every numeric threshold is deferred to "configuration," "load testing," or "business requirements" |
+| Named compliance framework (SOC 2 / GDPR / CCPA / PCI) | Not addressed in any of the 172 documents |
+
+These are not oversights to "fill in" unilaterally; several (numeric spend/financial limits especially) are product and legal decisions, not engineering ones, and per `CLAUDE.md`'s rule against inventing business rules, must be confirmed with the project owner rather than assumed.
+
+---
+
+## 11. Risks & Blockers Summary
+
+- **Blocker:** No gate in the SDLC has formally cleared its own approval checklist (§9) — the project's own process forbids starting feature development in this state.
+- **Blocker:** Repository is not under version control (`git init` not yet run) — required before any CI/CD, secret-scanning, or collaborative work can begin.
+- **Risk (High):** No numeric financial/spend guardrails are defined anywhere — the platform's core safety property (bounded autonomous ad spend) cannot be implemented, let alone tested, until these are supplied by the product owner.
+- **Risk (High):** Meta Graph/Marketing API version and real capability availability are unverified against live Meta documentation — the illustrative capability/permission list in the docs is explicitly not authoritative.
+- **Risk (Medium):** A dozen-plus core technology choices (§10) are open; making them piecemeal during feature phases rather than deliberately in Phase 1 risks inconsistency and rework.
+- **Risk (Medium):** No compliance framework is named despite the platform handling third-party (Meta) data and financial (ad spend) actions — worth an explicit stakeholder decision rather than silent omission.
+- **Not a risk:** the absence of code. This is expected for a repository at this stage per the documents' own description of Gate 11 ("repository baseline is a Gate 11 output... feature development starts only after Gate 11").
+
+See `docs/implementation/implementation-plan.md` for the recommended path from here.
