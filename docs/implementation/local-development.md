@@ -22,9 +22,10 @@ separate step for that on a fresh install.
 cp .env.example .env
 ```
 
-Edit `.env` if your local Postgres/Redis ports differ from the defaults (see the comment
-above `DATABASE_URL` in `.env.example` — it assumes the Docker Compose Postgres, mapped
-to host port `5433` to avoid clashing with a natively-installed Postgres on `5432`).
+Edit `.env` if your local Postgres/Redis ports differ from the defaults (see the comments
+above `DATABASE_URL`/`REDIS_URL` in `.env.example` — Postgres maps to host port `5433`
+to avoid clashing with a natively-installed Postgres on `5432`, and Redis maps to `6380`
+since another process can already own IPv6 loopback `6379` on some machines).
 
 ## 3. Start local dependencies
 
@@ -102,6 +103,14 @@ Each image's `HEALTHCHECK` hits its own `/health` endpoint — `docker ps` will 
   Postgres running too; this is expected and handled by mapping to `5433` (see decision
   #11 in `architecture-decisions.md`). If your `DATABASE_URL` still points at `5432`,
   update it.
+- **Redis integration tests fail intermittently with `ECONNRESET` or time out, even
+  though `docker exec <redis-container> redis-cli ping` returns `PONG`** — on this
+  project's own dev machine, a WSL2 relay process unrelated to Docker was independently
+  bound to IPv6 loopback port `6379`, so connections to `localhost:6379` sometimes landed
+  on that unrelated process instead of the Docker-forwarded Redis container. This is why
+  Redis is mapped to host port `6380`, not `6379` — if you still see this, run
+  `netstat -ano | findstr :6379` (Windows) and check whether more than one process owns
+  that port; point `REDIS_URL` at whichever port only Docker's Redis actually owns.
 - **Integration tests fail with connection errors** — confirm
   `docker compose -f infrastructure/docker-compose.yml ps` shows both services `healthy`
   before running `pnpm run test:integration`.

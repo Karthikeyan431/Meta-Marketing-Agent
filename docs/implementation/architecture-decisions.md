@@ -102,3 +102,17 @@ this development machine already has a native PostgreSQL 17 service bound to the
 port. `.env.example`'s `DATABASE_URL` matches this. A machine without a conflicting local
 install can just as validly run the compose Postgres on 5432 — adjust `DATABASE_URL`
 accordingly; nothing in the application hardcodes the port.
+
+## 12. Local dev Redis mapped to host port 6380, not 6379
+
+Found during Phase 1 verification closure: integration tests intermittently failed with
+`ECONNRESET`/timeouts against Redis, even though `docker exec <container> redis-cli ping`
+returned `PONG` — i.e., the container itself was healthy. Root cause, confirmed via
+`netstat`/`Get-Process`: on this development machine, `wslrelay.exe` (a WSL2 networking
+process entirely unrelated to this project or Docker Desktop) was independently bound to
+IPv6 loopback port `6379`, alongside Docker's own legitimate port-forward. Depending on
+which address Node's connection attempt resolved to, `redis://localhost:6379` sometimes
+reached the real Redis container and sometimes reached the unrelated process, producing
+exactly the flaky symptoms observed. Remapping the compose service to host port `6380`
+(same pattern as decision #11's Postgres remap) resolves it deterministically. This is a
+machine-specific port collision, not an application or Docker configuration defect.

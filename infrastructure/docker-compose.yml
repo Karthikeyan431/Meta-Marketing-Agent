@@ -28,7 +28,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Mapped to a non-default host port: on some machines another process (observed:
+      # a WSL2 relay unrelated to this project) can already own IPv6 loopback port 6379,
+      # causing intermittent ECONNRESET/timeouts that look like Redis is flaky when it
+      # isn't. Update REDIS_URL to match if you change this.
+      - "6380:6379"
     volumes:
       - redis-data:/data
     healthcheck:
