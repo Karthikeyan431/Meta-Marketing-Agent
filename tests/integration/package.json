@@ -1,0 +1,19 @@
+{
+  "name": "@ai-marketing-manager/tests-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-marketing-manager/api": "workspace:*",
+    "@ai-marketing-manager/config": "workspace:*",
+    "@ai-marketing-manager/domain": "workspace:*",
+    "@ai-marketing-manager/queue": "workspace:*",
+    "bullmq": "^5.34.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

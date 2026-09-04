@@ -28,7 +28,7 @@ These are process blockers, not technical ones, and should be resolved by the pr
 2. **Missing numeric guardrails.** Financial/spend limits, rate limits, SLAs, RPO/RTO, and AI confidence/cooldown thresholds are structurally required everywhere but quantified nowhere. These are product/business decisions. **Recommended resolution:** capture them in a short addendum (e.g., `docs/04-data/../LIMITS.md` or an ADR) before Phase 9 (Controlled Actions) needs them — they do not block Phases 1–8.
 3. **Technology stack selection.** See `repository-assessment.md` §10. **Recommended resolution:** resolved inside Phase 1 itself (below), recorded as an ADR-style decision log, since the docs explicitly delegate this choice to implementation time.
 
-None of these block *this document* or the completed repository-assessment — they block writing the first line of application code.
+None of these block _this document_ or the completed repository-assessment — they block writing the first line of application code.
 
 ---
 
@@ -56,72 +56,86 @@ The repository's own `IMPLEMENTATION_PHASES.md` (Gate 11) already defines a 14-s
 ## Phase-by-Phase Detail
 
 ### Phase 1 — Repository / Foundation
+
 **Objective:** Establish the first installable, lintable, testable, buildable state.
 **Key deliverables:**
+
 - `git init`; adopt the target repository layout from `REPOSITORY_STRUCTURE.md`, adapted once the stack is chosen.
 - **Explicit technology decisions**, recorded (language/runtime, backend framework, ORM, migration tool, frontend framework, CI platform, cloud provider, IaC tool, secret manager, queue technology — resolving the Redis-vs-job-queue ambiguity noted in the assessment).
 - Database provisioned (PostgreSQL, per the corroborated target); first migration executed.
 - Structured logging, error-handling conventions, and correlation-ID plumbing.
 - Minimal CI pipeline (lint, typecheck, unit test, secret scan, build) running on every commit.
 - Secret management wired up before any credential is created.
-**Gate:** baseline validation commands from `repository-assessment.md` §4 all exist and pass.
+  **Gate:** baseline validation commands from `repository-assessment.md` §4 all exist and pass.
 
 ### Phase 2 — Identity & Multi-Tenancy
+
 **Objective:** Authentication, sessions, workspace membership, RBAC, tenant isolation, audit foundation.
 **Key deliverables:** users/workspaces/workspace_memberships tables; chosen auth mechanism; server-controlled sessions; authorization chain (auth→membership→permission→resource-ownership→operation→policy); the concrete RBAC permission matrix behind the placeholder role names (OWNER/ADMIN/MARKETER/ANALYST/APPROVER/VIEWER); `audit_events` table, append-only.
 **Gate:** the six cross-tenant attack scenarios from `TENANT_ISOLATION.md`/`TENANT_SECURITY.md` are implemented as automated negative tests and all fail safely.
 
 ### Phase 3 — Meta Connection
+
 **Objective:** OAuth, credential protection, account discovery, connection health, adapter and sync foundation.
 **Key deliverables:** `MetaClient`/`MetaPort` adapter skeleton; OAuth connect/callback flow with unpredictable/short-lived/single-use state; encrypted credential storage; account discovery and selection UI/API; connection health states (Connected/Degraded/Reconnect required/Disconnected); disconnect flow preserving audit history.
 **Gate:** OAuth CSRF/state test, credential-leakage test, and disconnect-preserves-audit test pass; Meta Graph/Marketing API version pinned and documented as a decision record.
 
 ### Phase 4 — Core Meta Data
+
 **Objective:** Ad accounts, campaigns, ad sets, ads, normalized data model, pagination and synchronization.
 **Key deliverables:** canonical entity tables per `SCHEMA_DESIGN.md`; sync workers (initial full + incremental + webhook-triggered + reconciliation); freshness tracking exposed on every synced record; webhook endpoint (`POST /webhooks/meta`) with authenticity validation and dedup.
 **Gate:** repeated syncs do not duplicate entities; a simulated partial-page failure is not reported as a complete sync; freshness state is queryable.
 
 ### Phase 5 — API
+
 **Objective:** Implement approved `/api/v1` contracts, OpenAPI, validation, authorization, idempotency and errors.
 **Key deliverables:** OpenAPI spec committed to source control and CI-validated before/with implementation (`OPENAPI_REQUIREMENTS.md`); `{data,meta}`/`{error:{code,message,request_id}}` envelopes; cursor pagination with allowlisted filters/sorts; idempotency keys on financial-impacting mutation endpoints; object-level authorization on every protected endpoint.
 **Gate:** automated BOLA/IDOR tests pass on every resource family; idempotency-key replay-with-different-params fails as required.
 
 ### Phase 6 — Frontend Foundation
+
 **Objective:** Design system, routing, API client, authentication UI, workspace shell, responsive/accessibility foundation.
 **Key deliverables:** chosen frontend framework scaffolded per the five-layer architecture (Pages/Routes → Feature Components → Domain UI State → API Client → Backend API); central typed API client (no direct Meta calls from the browser — enforced by construction); design tokens and the first slice of the 24-component design system; WCAG 2.2 AA baseline wired into CI.
 **Gate:** login → workspace shell renders; no direct Meta API calls exist anywhere in frontend code (verified by grep/lint rule, not just review).
 
 ### Phase 7 — Campaign UX
+
 **Objective:** Account dashboard, campaign tables, campaign detail, insights and global search.
 **Key deliverables:** dashboard with freshness indicators; campaign table/detail views distinguishing source metrics from AI interpretation (a rule repeated in Gates 8 and 9); Ctrl/Cmd+K global search, workspace-scoped, never auto-navigating on an ambiguous match.
 **Gate:** search cross-workspace-leakage negative test passes; freshness indicators reflect actual sync state, not a static label.
 
 ### Phase 8 — AI Read-Only
+
 **Objective:** Chat, intent/entity resolution, retrieval tools, grounded explanations and AI evaluation suite.
 **Key deliverables:** conversation/message/ai_run/ai_tool_call persistence; intent classification (14 classes); workspace-scoped entity resolution with confidence thresholds and clarification-on-ambiguity; read-only typed tools only (no mutation tools exist yet at this phase); the untrusted-external-data prompt boundary structure; the golden/adversarial/prompt-injection evaluation dataset, run as a CI regression gate.
 **Gate:** prompt-injection test cases (malicious content embedded in campaign names/descriptions) cannot cause an unauthorized tool call; every factual claim in a response is traceable to a tool result.
 
 ### Phase 9 — Controlled AI Actions
+
 **Objective:** Action model, policy engine, approval workflow, execution, verification and audit.
 **Key deliverables:** the full action state machine with version/hash-bound approvals; Deterministic Action Compiler (AI proposals are never executed directly from model output); policy engine enforcing the (by-now product-supplied, see Blocker #2) numeric financial/operational limits; emergency stop; read-after-write verification with `VERIFIED`/`VERIFICATION_FAILED` states; mutation tools added to the AI tool registry only now, gated by everything built in Phases 2, 5, and this phase.
 **Gate:** the "500%-budget-increase" style worked example from `SPEND_AND_FINANCIAL_CONTROLS.md` is an automated test and is rejected; approval replay and changed-parameter-after-preview are both automated negative tests and both fail correctly; a failed Meta mutation is never reported as successful.
 
 ### Phase 10 — Reporting
+
 **Objective:** Report builder, AI reports, exports and freshness indicators.
 **Key deliverables:** report builder (account/campaign selection, date range, metrics, breakdowns, comparison period); AI-generated reports separating source facts / calculated metrics / AI interpretation / recommendations; export formats; freshness surfaced on every report.
 **Gate:** a report generated from intentionally stale data is visibly labeled as such, not silently presented as current.
 
 ### Phase 11 — Reliability & Security Hardening
+
 **Objective:** Rate limits, resilience, security tests, performance, observability, backup/restore validation.
 **Key deliverables:** the 8-layer rate-limiting model tuned with real numeric thresholds (from load testing, per `API_RATE_LIMITS.md`'s explicit deferral); the ten resilience failure classes simulated; the full `PRODUCTION_SECURITY_CHECKLIST.md` (SEC-016) and `INFRA_SECURITY_CHECKLIST.md` (DEVOPS-018) checked off; RPO/RTO finalized and backup-restore tested; performance budgets defined and met.
 **Gate:** both production checklists 100% complete; disaster-recovery restore test passes.
 
 ### Phase 12 — Staging & UAT
+
 **Objective:** Production-like deployment, complete E2E, manual UAT, defect remediation and release candidate.
 **Key deliverables:** staging environment at production parity minus credentials/spend; the full 10-step critical E2E path and 8 negative E2E cases automated and green; manual UAT walking the same critical journey, explicitly including a prompt-injection attempt; zero open Critical defects, High defects have explicit documented risk acceptance.
 **Gate:** `RELEASE_CRITERIA.md`'s Release Definition of Done fully satisfied.
 
 ### Phase 13 — Production
+
 **Objective:** Production deployment, smoke tests, controlled mutation enablement and monitoring.
 **Key deliverables:** production smoke tests (read-only health checks before any mutation is enabled, per `META_INTEGRATION_TESTING.md`); monitoring/alerting live (Critical/High/Informational tiers); rollback verified without requiring an infrastructure rebuild; production runbook exercised.
 **Gate:** all of the above green, then — and only then — mutation-capable operation is enabled in production.

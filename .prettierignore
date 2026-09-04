@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.next
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml
+packages/domain/prisma/migrations
+ai-marketing-manager-gate-*-docs
+ai-marketing-manager-gate-11-development-readiness
+docs/ai-marketing-manager-phase-1a-architecture-finalization

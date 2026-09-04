@@ -29,6 +29,7 @@ docs/
 ## Before writing code
 
 Read, in order:
+
 1. `docs/ai-marketing-manager-gate-0-docs/CLAUDE.md` — development constitution
 2. `docs/implementation/repository-assessment.md` and `implementation-plan.md`
 3. `docs/ai-marketing-manager-phase-1a-architecture-finalization/docs/13-architecture-finalization/` — accepted technology baseline and open decisions

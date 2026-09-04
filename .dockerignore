@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/build
+**/coverage
+**/playwright-report
+**/test-results
+.git
+.claude
+*.md
+!README.md
+docs
+.env
+.env.*
+!.env.example

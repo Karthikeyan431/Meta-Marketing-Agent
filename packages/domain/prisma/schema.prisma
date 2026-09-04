@@ -1,0 +1,26 @@
+// Canonical data model — packages/domain
+//
+// INTENTIONALLY EMPTY OF BUSINESS MODELS as of Phase 1 (Foundation).
+// Per the Phase 1 task instructions: "Do not prematurely implement the complete
+// business schema" and "If foundational tables are required by the selected
+// authentication/workspace architecture, document and justify them before adding
+// them." No such justification exists yet — Identity & Multi-Tenancy (users,
+// workspaces, workspace_memberships) is explicitly Phase 2 scope per
+// docs/implementation/implementation-plan.md and
+// docs/ai-marketing-manager-gate-3-docs/docs/04-data/DATA_ARCHITECTURE.md.
+//
+// This schema still exercises the real migration workflow end-to-end: enabling
+// the pgcrypto extension (needed by every future table for UUID primary keys,
+// per the canonical-ID convention in ADR-003-CANONICAL-DATA-MODEL.md) is a
+// genuine, justified foundation-level migration, not a placeholder table.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto]
+}
