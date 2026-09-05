@@ -1,12 +1,13 @@
 # Phase 2.2 — Clerk Authentication Implementation
 
-**Document ID:** IDENT-017 | Version 1.0 | Status: Complete | Phase: 2.2 (Implementation)
+**Document ID:** IDENT-017 | Version 1.1 | Status: Complete, real-Clerk UAT closed (2026-09-06) | Phase: 2.2 (Implementation)
 
 Governed by the "Claude Code — Phase 2.2 — Clerk Authentication Implementation" task,
 built on the Phase 2.1-verified baseline (Next.js `^15.5.9`, `@clerk/nextjs@^7.9.1`
 installed). This phase implements the authenticated-identity boundary only — no
 workspace, membership, role, permission, or resource-authorization code exists yet (see
-§8 for why, and §12 for the exact scope boundary).
+§8 for why, and §13 for the exact scope boundary). **2026-09-06 update:** §12 records a
+follow-up real-Clerk-development UAT closure that needed no code change.
 
 ## 1. Clerk Integration
 
@@ -256,13 +257,15 @@ see §11):
 
 ## 11. Known Limitations
 
-1. **No real Clerk application exists.** Every genuinely end-to-end, real-browser,
-   real-sign-in flow (items 3–6 and the fully-live version of 9 in §10) could not be
-   manually verified in this session and cannot be automated in CI either, per the
-   governing task's own explicit instruction not to depend on one. This is a structural
-   limitation, not a defect — the code is written and tested against every seam that
-   _can_ be verified without a real account (§7's mocked tests cover the actual identity
-   -resolution logic completely).
+1. **No real Clerk application existed at the time Phase 2.2 was implemented.** Every
+   genuinely end-to-end, real-browser, real-sign-in flow (items 3–6 and the fully-live
+   version of 9 in §10) could not be manually verified in this session and could not be
+   automated in CI either, per the governing task's own explicit instruction not to
+   depend on one. This was a structural limitation, not a defect — the code was written
+   and tested against every seam that _can_ be verified without a real account (§7's
+   mocked tests cover the actual identity-resolution logic completely). **Resolved
+   2026-09-06 — see §13**: a real Clerk development application was subsequently made
+   available, and every item deferred here was manually re-verified against it.
 2. **Local E2E required `--workers=1`.** This session's machine hit a V8/Chromium
    out-of-memory error at Playwright's default parallelism (4 workers) — consistent with
    the severe local disk-space exhaustion already documented in
@@ -282,13 +285,52 @@ see §11):
    the rest of the task ("Do not install Clerk credentials," "Do not create Clerk
    application configuration," "Do not create migrations") were honored literally.
 
-## 12. Phase 2.3 Prerequisites
+## 12. Real Clerk Development UAT (2026-09-06 closure)
+
+Performed against the project's real Clerk **development** application (not a fixture —
+confirmed by Clerk's own "Development mode" badge in the account menu), using the actual
+local dev environment (`pnpm run dev:api` / `dev:web`, no architecture change). Every item
+§10/§11 deferred was re-verified for real, live, in a real browser:
+
+1. **Sign-up loads and account creation succeeds** — Clerk's real hosted sign-up widget
+   rendered and a real development-instance account was created (by the human operator —
+   account creation and credential entry are actions this agent does not perform itself
+   under any circumstance, per its own operating constraints).
+2. **User becomes authenticated / application recognizes the session** — the root
+   layout's `<Show when="signed-in">` correctly swapped to Clerk's `<UserButton>`
+   immediately after sign-up, with no code change needed.
+3. **Protected `/app` route becomes accessible** — confirmed, rendering
+   "Authenticated application entry."
+4. **Real API identity verification**: `/app` displayed `Signed in as Clerk user
+user_3Iv5iZ88LnCadVBjgzp5uEQfCdF` (Next.js side, via `auth()`) and, independently,
+   "apps/api independently resolved the same identity: user_3Iv5iZ88LnCadVBjgzp5uEQfCdF"
+   (Fastify side, via `@clerk/backend`'s `verifyToken()` against the real Clerk API) —
+   **the two identities matched exactly**, with zero mocks involved anywhere in this
+   check. Independently corroborated in `apps/api`'s own structured log: two real `GET
+/me` requests from `127.0.0.1` (server-to-server, never from the browser — confirming
+   the session token never reaches client-side code), both `statusCode: 200`.
+5. **Session persistence** — the session survived a full restart of both dev servers
+   (not just a page refresh): `/app` remained accessible and resolved the identical
+   identity afterward, with no re-sign-in required.
+6. **Sign out** — Clerk's `<UserButton>` sign-out control (no custom code) correctly
+   cleared the session; the app's nav reverted to `<Show when="signed-out">`'s sign-in/up
+   buttons.
+7. **Post-sign-out protected-route enforcement** — visiting `/app` again while signed out
+   redirected to `/sign-in`, exactly as before sign-up — the boundary re-engaged
+   correctly, with no stale session artifact.
+
+**No code change was required to pass this UAT** — every observed behavior matched what
+was implemented and already covered by mocked tests. This closes the one structural gap
+`phase-2-1`/`phase-2-2` could not close on their own (§11 item 1), using the project's
+real Clerk development application, never production credentials. No secret was printed,
+logged, or committed at any point in this verification.
+
+## 13. Phase 2.3 Prerequisites
 
 Per `phase-2-implementation-sequence.md` (updated alongside this report):
 
-- A real Clerk application must be created (Dashboard, outside this repository, still not
-  done anywhere in this session) before real sign-in/sign-up/session behavior can be
-  manually verified end-to-end.
+- ~~A real Clerk application must be created...~~ **Done (§12, 2026-09-06)** — a real
+  Clerk development application now exists and end-to-end auth is verified against it.
 - The `users` table (Application User, sequence step 3) remains the next schema step —
   intentionally not started this phase (§8).
 - Everything downstream of it (Workspace, Membership, Role, Permission, the full

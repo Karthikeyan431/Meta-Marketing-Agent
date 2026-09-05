@@ -26,6 +26,13 @@ is a deliberate re-sequencing by explicit instruction, not a silent deviation �
 about Clerk authentication depends on those steps existing first, and no step below was
 skipped, only deferred. Steps 3–11 remain entirely unbuilt.
 
+**Phase 2.2 UAT closure (2026-09-06):** a real Clerk development application was made
+available and the full authentication boundary was re-verified end-to-end against it
+(real sign-up, sign-in, session persistence across a server restart, sign-out, and a
+real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
+No code change was required. This closes the "no real Clerk application" limitation
+carried since Phase 2.1/2.2.
+
 ## 1. Next.js Upgrade Recommendation
 
 ### 1.1 The blocker
