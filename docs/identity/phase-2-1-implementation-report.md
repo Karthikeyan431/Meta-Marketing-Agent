@@ -150,19 +150,34 @@ written that could introduce them.
 | Web production build | **Locally: PARTIAL — environment, not code.** `next build` compiles, type-checks, and statically generates all 4 pages successfully using the correct `15.5.25` binary; only the final Windows-only "collecting build traces" step fails with `EPERM` on symlink creation (Windows requires Developer Mode or Administrator privileges for this). **On CI (run 33967395383, Ubuntu): PASS** — confirms this is purely a Windows-host limitation, not present in the Linux environment this project actually deploys from.                                                                             |
 | Docker               | **NOT VERIFIED — environment (see §8).** Docker Desktop's CLI/API did not respond during this session despite its background processes running; a build attempt against `apps/web/Dockerfile` produced zero output after 15+ minutes and was stopped. The repository's CI does not currently include a Docker build step either (confirmed by reading `.github/workflows/ci.yml`) — this is a pre-existing gap in the pipeline, not something introduced or resolved by this phase.                                                                                                                   |
 | E2E                  | **Locally: PASS** (3/3, once the dev server was pre-warmed — see §9). **On CI (run 33967395383): PASS.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Secret scan          | **First two CI pushes: FAIL (real finding, diagnosed and fixed each time — see §4).** Gitleaks' `stripe-access-token` rule matched the original key-shaped Clerk env placeholders (Clerk and Stripe share the same key-prefix convention), then re-matched this document's own first attempt at describing that placeholder literally. Fixed by rewording the placeholders to a non-credential-shaped form in `.env.example` and removing the literal old value from this document's own prose; re-pushed for re-verification (§6/§10 of the Final Report has the resulting run).                     |
+| Secret scan          | **PASS on the final push (run `33969688201`), after two real findings diagnosed and fixed — see §4/§6.** Gitleaks' `stripe-access-token` rule matched the original key-shaped Clerk env placeholders, then re-matched this document's own first attempt at describing that placeholder literally. Both fixed at the root cause (no key-shaped strings anywhere in the repo); no gitleaks config/allowlist touched.                                                                                                                                                                                    |
 
 ## 6. CI
 
-Pushed as commit (see §7/§10 of the Final Report for the exact SHA) to `origin/main`.
 GitHub Actions workflow `.github/workflows/ci.yml` runs install → lint → format → typecheck
 → migrate → unit → integration → build (root + web) → Playwright install → E2E → secret
 scan → dependency audit, using ephemeral `postgres:17-alpine`/`redis:7-alpine` service
 containers — the same checks this report could only partially complete locally, run in a
 clean Ubuntu environment unaffected by this session's local Windows/Docker Desktop issues.
 **CI's result is the authoritative verification for integration tests, the web production
-build, and the secret scan** for this change; see the Final Report for the actual run
-outcome.
+build, and the secret scan** for this change.
+
+Three pushes were required to reach green, each diagnosed and fixed for cause (never
+suppressed or bypassed — see §4's full incident account):
+
+1. Commit `d55210d` (the Next.js/Clerk dependency change itself): **failed** only at
+   Secret scan — gitleaks flagged the original key-shaped Clerk placeholders in
+   `.env.example`. Every other step (install, lint, format, typecheck, migrations, unit,
+   integration, build, web production build, E2E) **passed**, confirming the actual
+   dependency change was sound and that this session's local integration-test and web-build
+   failures were purely local-environment artifacts, not code defects.
+2. Commit `9a27e69` (first placeholder fix): **failed** again at Secret scan — this report's
+   own narrative text had quoted the old placeholder literally while describing the
+   incident, and gitleaks correctly re-flagged that literal string.
+3. Commit `3f231e0` (second fix, removing the literal string from this document's prose):
+   **all 25 steps passed or skipped as expected** — full green run.
+
+Final verified state: **CI run `33969688201`, commit `3f231e066e306646b96ef44a00650b09a750f2f7`, conclusion `success`.**
 
 ## 7. Middleware Integration Boundary (Step 7 — documentation only)
 
@@ -253,6 +268,19 @@ section — none of these required or received a code change:
    this exists as a local machine characteristic; no `playwright.config.ts` change was made
    since Step 3 forbids weakening/bypassing checks and the underlying timeout is
    appropriate for CI's environment (which has passed this exact E2E suite previously).
+5. **Root cause of items 1, and likely a contributor to 2 and 4: the local machine's `C:`
+   drive had effectively 0 GB free** (confirmed via `Get-PSDrive` late in this session,
+   after `npx`, `Out-File`, and even `grep`/`curl -o` began failing with `ENOSPC`/"No space
+   left on device"). A full system drive is a well-known cause of exactly this kind of
+   Docker Desktop unresponsiveness (its WSL2 VM disk typically lives on `C:`) and of
+   generally sluggish, timeout-prone local tooling. **This is a host-machine condition the
+   repository cannot fix and this phase did not attempt to fix** — recommended as a direct,
+   actionable item for whoever operates this machine, separate from and prior to any future
+   local Docker/integration-test work (item 10 below). Work observed to still succeed
+   despite this (git commit/push, `pnpm`/`pnpm exec` commands, the Edit/Write tools used
+   throughout this phase) evidently found enough headroom or used a less space-sensitive
+   path; `npx` specifically failed because it writes to a separate npm cache directory that
+   had none left.
 
 ## 10. Phase 2.2 Prerequisites
 
@@ -267,7 +295,12 @@ beyond) begins:
 - The exact `organizationMembership.created`-equivalent event name should be confirmed
   against that real application's Dashboard Event Catalog before any webhook handler is
   written (OD-09, still open — unaffected by this phase).
+- **This machine's `C:` drive should have disk space freed before Phase 2.2 local
+  development begins (§9 item 5).** Recommended first, since it is likely the root cause of
+  the Docker Desktop/Postgres/Redis unresponsiveness observed this session; freeing space
+  and restarting Docker Desktop should be tried before any more specific Docker/database
+  troubleshooting.
 - This session's local Docker/Postgres/Redis unresponsiveness (§9) should be resolved (or
-  worked around, e.g. via a fresh Docker Desktop restart) before local integration-test-
-  driven development of the schema/membership work in Phase 2.2, since that work will lean
-  heavily on the same local Postgres instance.
+  worked around, e.g. via a fresh Docker Desktop restart once disk space is freed) before
+  local integration-test-driven development of the schema/membership work in Phase 2.2,
+  since that work will lean heavily on the same local Postgres instance.
