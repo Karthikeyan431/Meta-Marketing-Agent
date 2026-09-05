@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 test.describe("application shell", () => {
   test("home page renders the app shell with a skip link and main landmark", async ({ page }) => {

@@ -4,8 +4,10 @@ import type { ApiEnv } from "./env.js";
 import requestIdPlugin from "./plugins/request-id.js";
 import securityPlugin from "./plugins/security.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
+import authPlugin from "./plugins/auth.js";
 import healthRoute from "./routes/health.js";
 import readyRoute from "./routes/ready.js";
+import meRoute from "./routes/me.js";
 
 export interface BuildAppOptions {
   env: ApiEnv;
@@ -34,8 +36,10 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(requestIdPlugin);
   await app.register(errorHandlerPlugin);
   await app.register(securityPlugin, { env });
+  await app.register(authPlugin, { env });
   await app.register(healthRoute);
   await app.register(readyRoute, { env });
+  await app.register(meRoute);
 
   return app;
 }

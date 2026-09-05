@@ -10,6 +10,11 @@ export const apiEnvSchema = baseEnvSchema.extend({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(1_048_576),
+  // Optional (not required with a default) so the API can boot and every non-auth route
+  // keeps working with no Clerk application configured at all (e.g. this repo's own CI).
+  // When absent, every request resolves as unauthenticated — never as authenticated by
+  // default — see apps/api/src/plugins/auth.ts.
+  CLERK_SECRET_KEY: z.string().min(1).optional(),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 

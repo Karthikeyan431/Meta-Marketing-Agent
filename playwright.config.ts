@@ -1,4 +1,10 @@
+import { config as loadDotenv } from "dotenv";
 import { defineConfig, devices } from "@playwright/test";
+
+// Local dev convenience only — loads the repo-root .env so Clerk's fixture-shaped test
+// keys (never real credentials; see .env.example) reach the spawned `next dev` process
+// below. No-op if the file doesn't exist (e.g. CI, which injects env vars directly).
+loadDotenv();
 
 const PORT = 3100;
 const BASE_URL = `http://localhost:${PORT}`;
@@ -28,6 +34,13 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_API_URL: process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:4000",
       PORT: String(PORT),
+      // next dev actually executes clerkMiddleware() per live request (unlike `next
+      // build`, which never runs it) — it fails fast if the publishable key is entirely
+      // absent. Fixture-only fallback values, never real credentials; see .env.example.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"] ??
+        "replace-with-real-clerk-publishable-key",
+      CLERK_SECRET_KEY: process.env["CLERK_SECRET_KEY"] ?? "replace-with-real-clerk-secret-key",
     },
   },
 });

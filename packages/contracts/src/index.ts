@@ -19,3 +19,5 @@ export {
   type ReadinessResponse,
   type DependencyCheck,
 } from "./health.js";
+
+export { meResponseSchema, type MeResponse } from "./identity.js";

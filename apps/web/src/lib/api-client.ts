@@ -24,6 +24,12 @@ export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * A Clerk session token to forward as `Authorization: Bearer <token>` — obtained
+   * server-side via `getAuthenticatedIdentity()` (src/lib/auth.ts). Never read from any
+   * client-supplied value; the caller must have already verified it via Clerk.
+   */
+  token?: string | null;
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -33,6 +39,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: {
       "content-type": "application/json",
       [REQUEST_ID_HEADER]: requestId,
+      ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,

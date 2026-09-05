@@ -20,6 +20,7 @@
     "@ai-marketing-manager/contracts": "workspace:*",
     "@ai-marketing-manager/domain": "workspace:*",
     "@ai-marketing-manager/queue": "workspace:*",
+    "@clerk/backend": "^3.17.1",
     "@fastify/cors": "^10.0.2",
     "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^10.2.2",

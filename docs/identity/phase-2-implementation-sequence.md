@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.1 | Status: FINALIZED (Owner-Accepted 2026-09-05) — Phase 2 Implementation NOT Yet Authorized | Phase: 2A (Decision Preparation)
+**Document ID:** IDENT-015 | Version 1.2 | Status: IN PROGRESS (steps 1, 2, 12 done) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -9,10 +9,22 @@ not something performed in this phase.
 
 **2026-09-05 update:** the owner's "Approve Phase 2A Identity Decisions" closure message
 finalized the implementation sequence in §2 below (superseding the previously PROPOSED
-12-step order) and resolved the owner-decision prerequisites named in §3. **Finalizing the
-sequence is not the same as authorizing Phase 2 to begin** — per that closure message's
-explicit Hard Restrictions, no step below has been started; a separate, explicit
-go-ahead is still required before step 1 may start.
+12-step order) and resolved the owner-decision prerequisites named in §3.
+
+**Phase 2.1 (2026-09-05):** step 1 (Next.js compatibility upgrade) done; step 2 (Clerk
+installation/configuration) partially done — package installed, environment placeholders
+declared, no real Clerk application created. See `phase-2-1-implementation-report.md`.
+
+**Phase 2.2 (2026-09-05):** step 12 (Frontend auth/session) done — see
+`phase-2-2-implementation-report.md`. **Executed out of the original step order**: the
+owner's explicit Phase 2.2 task requested the Clerk authentication boundary
+(middleware, sign-in/sign-up UI, one protected route, and the API-side identity
+resolution seeding a future `requireAuth()`) _before_ steps 3–11 (Application User,
+Workspace, Membership, Role, Permission, the full authorization primitive chain,
+resource authorization, workspace-aware API protection, identity synchronization). This
+is a deliberate re-sequencing by explicit instruction, not a silent deviation — nothing
+about Clerk authentication depends on those steps existing first, and no step below was
+skipped, only deferred. Steps 3–11 remain entirely unbuilt.
 
 ## 1. Next.js Upgrade Recommendation
 
@@ -111,6 +123,13 @@ requirePermission()/requireResourceAccess()` (`authorization.md` §1, owner-acce
     membership-created event name (OD-09's other sub-item) is confirmed against the live
     Dashboard immediately before this step's membership-creation handler specifically.
 12. **Frontend auth/session** — `<ClerkProvider>`, sign-in/sign-up UI — depends on step 2.
+    **DONE (Phase 2.2, see `phase-2-2-implementation-report.md`)** — `middleware.ts`
+    (`clerkMiddleware()`), `<ClerkProvider>` + `<Show>`-based sign-in/up/out controls in
+    the root layout, `/sign-in` and `/sign-up` catch-all pages, one protected route
+    (`/app`), and the seed of a future `requireAuth()` on both the Next.js side
+    (`getAuthenticatedIdentity()`) and the separate Fastify API side
+    (`requireAuthenticatedIdentity()`, `GET /me`). Executed ahead of steps 3–11 by
+    explicit instruction — see the note above.
 13. **Workspace switching** — the switching flow (`workspace-model.md` §4), including the
     owner-accepted active-workspace resolution chain (`Clerk user → Clerk org context →
 application membership → workspace status → authorized workspace`, OD-11) — depends

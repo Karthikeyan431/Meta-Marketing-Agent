@@ -16,6 +16,12 @@ env:
   REDIS_URL: redis://localhost:6379
   NEXT_PUBLIC_API_URL: http://localhost:4000
   CORS_ORIGIN: http://localhost:3000
+  # Non-key-shaped placeholders (never real credentials — see .env.example): sufficient
+  # for `next build`, which never executes clerkMiddleware(). The E2E step below needs a
+  # shape-valid fixture instead (live request-serving fatally validates key format) —
+  # computed at runtime in its own step so no key-shaped literal is ever committed.
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: replace-with-real-clerk-publishable-key
+  CLERK_SECRET_KEY: replace-with-real-clerk-secret-key
 
 jobs:
   # Each pipeline stage from the Phase 1 task's required list is its own job step below,
@@ -91,6 +97,23 @@ jobs:
 
       - name: Build web (Next.js production build)
         run: pnpm --filter @ai-marketing-manager/web run build
+
+      - name: Prepare fixture-only Clerk keys for E2E
+        # No real Clerk application exists in this project yet (docs/identity/phase-2-2-implementation-report.md) —
+        # computed at runtime, never committed, so no key-shaped literal ever lands in a
+        # tracked file. Shape-valid (satisfies @clerk/nextjs's fatal format check on every
+        # live request) but 100% non-functional: pk_live_ avoids Clerk's dev-instance
+        # cross-origin handshake redirect (which needs a real reachable Frontend API
+        # domain), and the decoded domain does not exist. See tests/e2e/fixtures.ts for
+        # how E2E tests block requests to that domain instead of letting them hang.
+        run: |
+          node -e "
+            const domain = 'fake-live-test.example.com';
+            const pub = 'pk_live_' + Buffer.from(domain + '\$').toString('base64').replace(/=+\$/, '');
+            const secretSuffix = Array.from({ length: 40 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+            console.log('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=' + pub);
+            console.log('CLERK_SECRET_KEY=sk_live_fixture_' + secretSuffix);
+          " >> "$GITHUB_ENV"
 
       - name: Install Playwright browsers
         run: pnpm run test:e2e:install

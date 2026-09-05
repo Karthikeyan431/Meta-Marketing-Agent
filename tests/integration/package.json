@@ -9,8 +9,10 @@
   "dependencies": {
     "@ai-marketing-manager/api": "workspace:*",
     "@ai-marketing-manager/config": "workspace:*",
+    "@ai-marketing-manager/contracts": "workspace:*",
     "@ai-marketing-manager/domain": "workspace:*",
     "@ai-marketing-manager/queue": "workspace:*",
+    "@clerk/backend": "^3.17.1",
     "bullmq": "^5.34.5"
   },
   "devDependencies": {
