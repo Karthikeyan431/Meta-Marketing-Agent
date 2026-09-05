@@ -73,10 +73,17 @@ on (all now ACCEPTED/DEFERRED, none blocking).
 
 1. **Next.js compatibility upgrade** (§1) — no dependents can start without this; pure
    dependency/build-config work, touches no identity logic. Target: `next@^15.5.9`.
+   **DONE (Phase 2.1, see `phase-2-1-implementation-report.md`)** — declared specifier
+   updated to `^15.5.9`; the resolved binary (`15.5.25`) was unchanged, since it already
+   satisfied the wider prior range.
 2. **Clerk installation/configuration** — depends on step 1. Plan (OD-01: Pro tier or
    higher) and Organization mapping (OD-02: Option A) are both ACCEPTED, so this step is
    unblocked by owner decision; webhook signing secret issuance and environment variables
    follow `SECURITY_BOUNDARY.md`'s existing secret-handling rules.
+   **PARTIALLY DONE (Phase 2.1)** — `@clerk/nextjs@^7.9.1` installed and environment
+   variable placeholders declared in `.env.example`; **not done**: no real Clerk
+   application/credentials exist yet (Dashboard setup, an out-of-repository action, remains
+   a Phase 2.2 prerequisite — `phase-2-1-implementation-report.md` §10).
 3. **Application User** — the `users` table (`identity-data-model.md` §2), keyed by
    `clerk_user_id` — depends on step 2 existing to have a Clerk identity to key against.
 4. **Workspace** — the `workspaces` table, including the `clerk_org_id` reference column
