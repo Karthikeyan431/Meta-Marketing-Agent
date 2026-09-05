@@ -1,6 +1,6 @@
 # Identity & Multi-Tenancy Architecture
 
-**Document ID:** IDENT-001 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-001 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 This is the master document for the `docs/identity/` set. It resolves the open sub-decision
 recorded in the Phase 1A `ARCHITECTURE_DECISION_REGISTER.md` ("ADR-002: no specific

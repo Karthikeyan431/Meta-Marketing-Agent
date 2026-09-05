@@ -1,31 +1,70 @@
 # Phase 2A Owner Decision Package
 
-**Document ID:** IDENT-014 | Version 1.0 | Status: OWNER DECISION REQUIRED | Phase: 2A (Decision Preparation)
+**Document ID:** IDENT-014 | Version 1.1 | Status: CLOSED — Owner Decisions Recorded (2026-09-05) | Phase: 2A (Decision Preparation)
 
 This document packages the 11 unresolved decisions from `phase-2a-decisions.md` §2 for
 owner approval/rejection, plus the supporting investigations the governing task requested.
-**Claude Code has not approved, rejected, or implemented any decision below.** Every
-recommendation is non-binding until the owner records a decision in §3's table.
+
+## 0. Closure Record (2026-09-05)
+
+The owner reviewed this package and recorded decisions via the "Claude Code — Approve
+Phase 2A Identity Decisions" instruction, referencing documentation commit
+`3f054bfe761f54e00f9a904d0a9a4d0929307be4` and GitHub Actions run `33961969827`. All
+decisions below are now **ACCEPTED** or **DEFERRED** as recorded in §1/§2/§3 — none remain
+"proposed."
+
+**Numbering reconciliation.** The owner's closure message numbered its decisions OD-01
+through OD-11 in a different grouping than this document's original OD-01–OD-11 (set at
+authoring time, before the owner's message existed, and already referenced by
+`phase-2-implementation-sequence.md`). To avoid silently reinterpreting either document,
+**this document's original OD-01–OD-11 IDs remain canonical**, and the owner's message is
+mapped onto them below rather than renumbered:
+
+| Owner's message ID | Owner's topic                   | Resolves (this package's ID)                                                                                                                                                                              |
+| ------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OD-01              | Clerk (provider scope)          | Reconfirms Clerk selection (ADR-002); resolves **OD-01** (plan/tier) by direct technical implication of accepting OD-04/MFA below                                                                         |
+| OD-02              | Clerk Organization ↔ Workspace  | **OD-02**                                                                                                                                                                                                 |
+| OD-03              | Workspace Lifecycle             | Extends **OD-08** (owner invariant) with an audited-deletion requirement; this document's original OD-03 (`APPROVER` role vs. permission) is resolved separately below via the Role Model acceptance      |
+| OD-04              | MFA                             | **OD-06**                                                                                                                                                                                                 |
+| OD-05              | Membership Permission Overrides | **OD-05**                                                                                                                                                                                                 |
+| OD-06              | PostgreSQL RLS                  | **OD-04**                                                                                                                                                                                                 |
+| OD-07              | Active Workspace                | **OD-11** (storage mechanism) and refines `workspace-model.md` §3's resolution chain                                                                                                                      |
+| OD-08              | Owner Invariant                 | **OD-08**                                                                                                                                                                                                 |
+| OD-09              | Identity Synchronization        | Accepts the reconciliation-frequency recommendation from §7 (Supporting Investigation); this document's original **OD-09** (exact Clerk event name) is a distinct, still-open procedural item, unaffected |
+| OD-10              | AI Authorization                | Reconfirms the AI security boundary — already "Required/non-negotiable" in `phase-2a-decisions.md` §1, not one of the original 11 opens; recorded as formally closed in §5                                |
+| OD-11              | Worker Authorization Context    | Accepts the field set from §6 (Supporting Investigation); not one of the original 11 opens; recorded as formally closed in §6                                                                             |
+
+Also accepted in the closure message, outside the OD-01–11 set: the **Role Model**
+(`OWNER/ADMIN/MANAGER/ANALYST/VIEWER`, no separate `APPROVER` role — resolving this
+document's OD-03) and the **Authorization Contract** (the five `requireXxx()` primitives).
+
+**Not addressed in the closure message — unaffected, because no owner decision was
+required for these in the first place (see each item's own point 12 below):** OD-07
+(step-up re-authentication mechanism — still deferred to Phase 2 implementation-time
+verification) and OD-10 (real-time membership-revocation propagation — recommendation
+stands, next-request-only). OD-09's exact-event-name sub-item is likewise still deferred to
+implementation time, distinct from the reconciliation-frequency sub-item, which is now
+accepted (see OD-09 below).
 
 ## 1. Decision Table
 
-| ID    | Decision                                    | Recommended                                                                                                 | Alternatives                                                                                 | Blocks Phase 2?                                                                                  |
-| ----- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| OD-01 | Clerk plan/tier                             | Free tier for Phase 2 (MFA deferred — see OD-06)                                                            | Pro ($25/mo+, adds MFA/passkeys/branding removal); Business ($250/mo+, adds admin logs/SOC2) | **NON-BLOCKING** — free tier covers every Phase 2 architectural requirement                      |
-| OD-02 | Clerk Organization ↔ Workspace mapping      | Option A: Clerk Organization → Application Workspace (1:1)                                                  | Option B: Workspace primary, Clerk Organization optional/absent                              | **OWNER DECISION REQUIRED** — affects webhook design and UI scope, not a hard blocker either way |
-| OD-03 | `APPROVER`: role vs. permission             | Permission (`budget.approve`), not a 6th role                                                               | Reinstate `APPROVER` as a distinct role                                                      | NON-BLOCKING                                                                                     |
-| OD-04 | PostgreSQL Row-Level Security               | **C. Unnecessary as a Phase 2 requirement; revisit as (B) defense-in-depth in Phase 11**                    | A. Required for Phase 2                                                                      | NON-BLOCKING                                                                                     |
-| OD-05 | Per-membership permission overrides         | Schema placeholder only; do not build the feature                                                           | Build full override support now                                                              | NON-BLOCKING                                                                                     |
-| OD-06 | MFA policy                                  | Require MFA for `OWNER`/`ADMIN` roles and any `budget.approve`/`budget.execute` holder; optional for others | No MFA requirement anywhere; MFA required for all roles                                      | **OWNER DECISION REQUIRED** — has a direct cost consequence (Pro plan, OD-01)                    |
-| OD-07 | Step-up re-authentication mechanism         | Clerk-native re-verification challenge, confirmed at Phase 2 implementation time                            | Application-built step-up (custom re-auth flow, not Clerk-native)                            | NON-BLOCKING                                                                                     |
-| OD-08 | "Never zero owners" invariant mechanism     | Block last-owner removal; require explicit ownership transfer first                                         | Allow zero-owner state with a recovery/support process                                       | NON-BLOCKING                                                                                     |
-| OD-09 | Exact Clerk membership-created event name   | Confirm against live Dashboard Event Catalog immediately before webhook implementation                      | Guess from documentation pattern and adjust later if wrong                                   | NON-BLOCKING (reconciliation is the backstop either way)                                         |
-| OD-10 | Real-time membership-revocation propagation | Next-request-only (no real-time session termination)                                                        | Real-time forced session/session-cache invalidation on revocation                            | NON-BLOCKING                                                                                     |
-| OD-11 | Active-workspace claim storage mechanism    | Clerk session claim (if Option A/OD-02 chosen) or our own server-side record                                | The other of the two options                                                                 | NON-BLOCKING                                                                                     |
+| ID    | Decision                                    | Recommended                                                                                                 | Owner Decision (2026-09-05)                                                                                                                                                                              |
+| ----- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OD-01 | Clerk plan/tier                             | Free tier for Phase 2 (MFA deferred — see OD-06)                                                            | **ACCEPTED — Pro tier (or higher)**, as a direct consequence of accepting OD-06 (MFA required for OWNER/ADMIN; free tier has no MFA)                                                                     |
+| OD-02 | Clerk Organization ↔ Workspace mapping      | Option A: Clerk Organization → Application Workspace (1:1)                                                  | **ACCEPTED — Option A**                                                                                                                                                                                  |
+| OD-03 | `APPROVER`: role vs. permission             | Permission (`budget.approve`), not a 6th role                                                               | **ACCEPTED — permission-based**, via the owner's Role Model acceptance (§ Role Model, five roles, no `APPROVER`)                                                                                         |
+| OD-04 | PostgreSQL Row-Level Security               | **C. Unnecessary as a Phase 2 requirement; revisit as (B) defense-in-depth in Phase 11**                    | **DEFERRED to Phase 11**, as recommended                                                                                                                                                                 |
+| OD-05 | Per-membership permission overrides         | Schema placeholder only; do not build the feature                                                           | **DEFERRED** — role-based authorization only for Phase 2, schema extensibility retained                                                                                                                  |
+| OD-06 | MFA policy                                  | Require MFA for `OWNER`/`ADMIN` roles and any `budget.approve`/`budget.execute` holder; optional for others | **ACCEPTED**, as recommended — required for OWNER/ADMIN and high-risk financial approval; optional for MANAGER/ANALYST/VIEWER                                                                            |
+| OD-07 | Step-up re-authentication mechanism         | Clerk-native re-verification challenge, confirmed at Phase 2 implementation time                            | Not addressed in the closure message — no owner decision was required (see point 12); recommendation stands, mechanism confirmed at Phase 2 implementation time                                          |
+| OD-08 | "Never zero owners" invariant mechanism     | Block last-owner removal; require explicit ownership transfer first                                         | **ACCEPTED**, as recommended — implement transactionally; extended by the owner to also require workspace deletion/closure be explicitly authorized and audited                                          |
+| OD-09 | Exact Clerk membership-created event name   | Confirm against live Dashboard Event Catalog immediately before webhook implementation                      | Event-name sub-item not addressed — no owner decision was required (see point 12), stands as a pre-implementation check. Reconciliation-frequency sub-item **ACCEPTED — every 30 minutes, configurable** |
+| OD-10 | Real-time membership-revocation propagation | Next-request-only (no real-time session termination)                                                        | Not addressed in the closure message — no owner decision was required (see point 12); recommendation stands, next-request-only                                                                           |
+| OD-11 | Active-workspace claim storage mechanism    | Clerk session claim (if Option A/OD-02 chosen) or our own server-side record                                | **ACCEPTED** — Clerk organization context, consistent with OD-02's Option A; owner's resolution chain: Clerk user → Clerk org context → application membership → workspace status → authorized workspace |
 
 **Separately, not an owner decision but a blocking engineering finding:** the Next.js
 version bump (§5) must happen before Clerk can be installed, regardless of how OD-01–11
-are resolved.
+are resolved. **Not yet performed** — remains a Hard Restriction under the closure task.
 
 ## 2. Detailed Decision Sections
 
@@ -43,6 +82,7 @@ are resolved.
 10. **Consequence of each alternative:** Pro adds MFA, passkeys, custom email templates, branding removal, session limits — none required for Phase 2 launch except MFA if OD-06 is approved as "required." Business adds admin logs/SOC2 — relevant only once a compliance requirement exists (none identified anywhere in the SDLC corpus per the Phase 0 assessment).
 11. **Blocks Phase 2?** **NON-BLOCKING** — every architectural requirement in this document set works on the free plan.
 12. **Exact owner decision required:** Approve free tier for Phase 2 launch, OR pre-approve a Pro-tier spend now if MFA (OD-06) should be mandatory from day one rather than added later.
+13. **Owner decision recorded (2026-09-05): ACCEPTED — Pro tier (or higher).** The owner accepted OD-06 (MFA required for OWNER/ADMIN and high-risk financial approval) without qualifying it as deferred; since the free plan has no MFA (item 4 above), Pro tier is a direct technical consequence of that acceptance, not a separate decision made unprompted here.
 
 **Requirement breakdown (as requested):**
 
@@ -80,6 +120,7 @@ either number transcribed here as final.
 10. **Consequence of each alternative:** Option A: more webhook/sync surface to build and test now, some cost ceiling to watch as the product grows. Option B: less Clerk-dependent code (marginally easier to ever migrate off Clerk later), but 100% custom-built workspace UI and no reduction in `identity-sync.md` scope beyond dropping the `organization.*`/`organizationMembership.*` families — `user.*` sync is still required either way.
 11. **Blocks Phase 2?** **OWNER DECISION REQUIRED** but not a hard blocker to _starting_ Phase 2 — the `users` table and `requireAuth()` work identically either way; this decision only needs to land before `identity-sync.md`'s webhook handlers and the `workspaces` table's `clerk_org_id` column are actually implemented.
 12. **Exact owner decision required:** Choose Option A or Option B for how (or whether) Clerk Organizations back application Workspaces.
+13. **Owner decision recorded (2026-09-05): ACCEPTED — Option A.** Application Workspace remains the authoritative domain entity for resource ownership, application roles/permissions, Meta assets, policies, actions, and audit; Clerk Organization provides identity/membership context only.
 
 **Comparison table (as requested):**
 
@@ -113,6 +154,7 @@ either number transcribed here as final.
 10. **Consequence of each alternative:** Adding the role now is speculative build-out for a use case not yet confirmed to exist; deferring it risks a schema/matrix change later if it turns out to be needed sooner than expected — a low-cost deferral either way since roles are a simple enum.
 11. **Blocks Phase 2?** NON-BLOCKING.
 12. **Exact owner decision required:** Confirm permission-based approach, or request `APPROVER` be reinstated as a distinct role now.
+13. **Owner decision recorded (2026-09-05): ACCEPTED — permission-based, no distinct role.** The closure message's Role Model section explicitly accepts only `OWNER/ADMIN/MANAGER/ANALYST/VIEWER` — a five-role set with no `APPROVER` — confirming the permission-based approach as designed.
 
 ---
 
@@ -136,6 +178,7 @@ either number transcribed here as final.
 10. **Consequence of choosing A now:** Phase 2 would need to also solve the connection-pooling/transaction-context problem above _before_ any identity/workspace code ships, materially expanding Phase 2's scope for a defense-in-depth layer whose primary control (application-layer authorization) is already mandatory and independently sufficient if correct.
 11. **Blocks Phase 2?** NON-BLOCKING either way — this is a "when," not "whether ever," question, and "not now" does not weaken any Phase 2 requirement.
 12. **Exact owner decision required:** Confirm deferring RLS to Phase 11, or explicitly require it be designed and implemented as part of Phase 2 despite the added scope described above.
+13. **Owner decision recorded (2026-09-05): DEFERRED to Phase 11.** Application-level tenant isolation and resource authorization remain mandatory in Phase 2 and are never replaced by RLS, as recommended.
 
 ---
 
@@ -157,6 +200,7 @@ either number transcribed here as final.
 10. **Consequence of building it now instead:** Meaningfully more Phase 2 scope (feature + audit + tests + the tighter-scoped "who can grant overrides" sub-permission this analysis surfaces as a prerequisite) for a capability with no confirmed current demand.
 11. **Blocks Phase 2?** NON-BLOCKING.
 12. **Exact owner decision required:** Confirm deferring the feature (schema-only for now), or request it be built as part of Phase 2.
+13. **Owner decision recorded (2026-09-05): DEFERRED.** Role-based authorization only for Phase 2 (`Membership → Role → RolePermissions`); `membership_permission_overrides` stays an unpopulated schema placeholder for future enterprise requirements, as recommended.
 
 ---
 
@@ -179,6 +223,7 @@ either number transcribed here as final.
 10. **Consequence of each alternative:** No requirement at all leaves the highest-value accounts (workspace owners, financial approvers) with only password/session security — a real gap given `SEC-002`'s own threat model rates "account takeover" and "compromised user account" as Critical-impact threats. Requiring it for all roles adds friction for read-only users with no corresponding risk reduction, and is a broader Pro-tier cost commitment with no security benefit over the risk-tiered approach for those specific accounts.
 11. **Blocks Phase 2?** **OWNER DECISION REQUIRED** given the direct cost coupling to OD-01, but not a hard blocker to writing Phase 2 authentication code — the code path is the same whether the _policy_ says "required" or "optional" for a given role; only the enforcement trigger's configuration changes.
 12. **Exact owner decision required:** Approve the risk-tiered MFA policy (and the associated Pro-tier cost via OD-01), or specify a different policy.
+13. **Owner decision recorded (2026-09-05): ACCEPTED, as recommended.** MFA required for `OWNER`, `ADMIN`, and high-risk financial approval; optional initially for `MANAGER`/`ANALYST`/`VIEWER`. High-risk financial operations must additionally support step-up authentication before final approval/execution (see OD-07 for the mechanism, still deferred). **Not to be implemented during Phase 2A** — this is a Phase 2 implementation task.
 
 ---
 
@@ -196,6 +241,7 @@ either number transcribed here as final.
 10. **Consequence of choosing custom instead:** More code to build, secure, and maintain, for a problem Clerk likely already solves natively — recommended only if Phase 2-time verification finds Clerk's native option doesn't fit a specific requirement.
 11. **Blocks Phase 2?** NON-BLOCKING — this is an implementation-detail decision deferred to Phase 2 itself, not something that needs resolving in this architecture-decision pass.
 12. **Exact owner decision required:** None required now; flagged so it isn't lost — Phase 2 implementer should verify Clerk's current step-up API before building anything custom.
+13. **Owner decision recorded (2026-09-05):** Not addressed in the closure message — consistent with point 12, none was required. The closure message reconfirms step-up is required for high-risk financial operations (see OD-06) without specifying the mechanism; this item's recommendation (Clerk-native, confirmed at implementation time) stands unchanged.
 
 ---
 
@@ -213,6 +259,7 @@ either number transcribed here as final.
 10. **Consequence of the alternative:** Requires building a support/recovery process (manual database intervention or a support-tool feature) for a state that's straightforward to prevent outright — strictly more total work for a worse outcome.
 11. **Blocks Phase 2?** NON-BLOCKING — a small, uncontroversial implementation detail.
 12. **Exact owner decision required:** None required; recommendation stands unless the owner sees a specific reason to prefer the alternative.
+13. **Owner decision recorded (2026-09-05): ACCEPTED, as recommended — implement transactionally.** Owner removal is allowed only when another active owner exists or an explicit ownership transfer is completed. **Extended by the owner (closure message's "Workspace Lifecycle" item):** workspace deletion/closure must additionally be explicitly authorized and audited, and the application must never silently orphan a workspace — both Clerk organization lifecycle and application workspace lifecycle are maintained together (see `workspace-model.md` §5, to be annotated at Phase 2 implementation time).
 
 ---
 
@@ -230,6 +277,7 @@ either number transcribed here as final.
 10. **Consequence of guessing now:** No real downside given the reconciliation backstop, but no benefit either since a real Clerk account will need to exist before this can actually be verified — deferring the confirmation costs nothing.
 11. **Blocks Phase 2?** NON-BLOCKING.
 12. **Exact owner decision required:** None — procedural note for the Phase 2 implementer.
+13. **Owner decision recorded (2026-09-05):** The exact-event-name sub-item was not addressed — consistent with point 12, none was required; it remains a pre-implementation Dashboard check. **A related but distinct sub-item — reconciliation frequency (§7 below) — was explicitly ACCEPTED: every 30 minutes, configurable**, closing the one open gap in `identity-sync.md` §4.
 
 ---
 
@@ -247,6 +295,7 @@ either number transcribed here as final.
 10. **Consequence of building real-time now:** Meaningful infrastructure (push mechanism) for a risk window measured in the time between two ordinary HTTP requests — disproportionate for Phase 2.
 11. **Blocks Phase 2?** NON-BLOCKING.
 12. **Exact owner decision required:** None required; recommendation stands.
+13. **Owner decision recorded (2026-09-05):** Not addressed in the closure message — consistent with point 12, none was required. Recommendation stands unchanged: next-request-only revocation.
 
 ---
 
@@ -264,22 +313,70 @@ either number transcribed here as final.
 10. **Consequence of the alternative:** Building our own record even when Clerk's native claim (Option A) is available is pure duplicated engineering effort with no corresponding benefit, since both are re-verified identically.
 11. **Blocks Phase 2?** NON-BLOCKING — resolves itself once OD-02 is decided.
 12. **Exact owner decision required:** None beyond OD-02 itself.
+13. **Owner decision recorded (2026-09-05): ACCEPTED — Clerk organization context.** Consistent with OD-02's Option A, the owner's specified active-workspace resolution chain (§ Active Workspace below) is: `Authenticated Clerk user → Clerk organization context → Application membership → Workspace status → Authorized workspace`. This refines, rather than replaces, `workspace-model.md` §3's resolution flow — `requireMembership()` still re-verifies against our database on every request; the Clerk organization context is never itself authorization-sufficient.
+
+## Additional Closure Items (outside the original OD-01–11 set)
+
+### Active Workspace (owner closure message, distinct from OD-11's storage question)
+
+The owner formalized the active-workspace **resolution chain** itself (not just where the
+claim is stored): `Authenticated Clerk user → Clerk organization context → Application
+membership → Workspace status → Authorized workspace`. The client may request a workspace
+context, but the server must validate every step; a client-supplied workspace ID is never
+trusted without this chain running in full. **ACCEPTED** — consistent with, and a
+refinement of, `workspace-model.md` §3/§4.
+
+### AI Authorization (owner closure message's OD-10)
+
+Not one of the original 11 open decisions — the AI security boundary was already
+"Required/non-negotiable" per `phase-2a-decisions.md` §1 (`ADR-002-AI-EXECUTION-BOUNDARY`).
+The owner's closure message reconfirms it explicitly: AI has no standing authorization;
+every AI tool call re-evaluates the full chain (Authenticated User → Workspace Membership →
+Permission → Resource Authorization → Action Policy → Financial Policy → Approval); the AI
+must never select or expand workspace scope. This matches the verification already recorded
+in §5 below. **ACCEPTED (reconfirmed, no design change).**
+
+### Worker Authorization Context (owner closure message's OD-11)
+
+Not one of the original 11 open decisions — this is the field set investigated in §6 below
+per the governing task's item 8. The owner's closure message accepts it explicitly:
+privileged jobs must carry `workspaceId`, `initiatingUserId` (or actor identity),
+resource scope, action scope, `correlationId`, and `jobId`, as applicable; workers must
+never accept arbitrary client-controlled authorization context. **ACCEPTED**, matching §6's
+analysis, with `jobId` named explicitly by the owner alongside the fields already
+identified there.
+
+### Role Model (owner closure message)
+
+`OWNER/ADMIN/MANAGER/ANALYST/VIEWER` **ACCEPTED** as the application-owned role model;
+Clerk's Organization roles are confirmed not used as the application's authorization
+source. Financial permissions remain separate from general campaign-management permissions
+(the Financial Separation Rule, `rbac.md` §4). This also resolves OD-03 (`APPROVER`) — see
+above.
+
+### Authorization Contract (owner closure message)
+
+The five primitives (`requireAuth() → requireWorkspace() → requireMembership() →
+requirePermission() → requireResourceAccess()`) **ACCEPTED** as the mandatory chain for
+every protected API/resource operation, with non-disclosing `404` behavior preferred for
+cross-workspace resource access where appropriate — matching `authorization.md` §1/§3
+exactly, no design change.
 
 ## 3. Owner Decision Recording
 
-| ID    | Owner decision | Date | Notes |
-| ----- | -------------- | ---- | ----- |
-| OD-01 | _(pending)_    |      |       |
-| OD-02 | _(pending)_    |      |       |
-| OD-03 | _(pending)_    |      |       |
-| OD-04 | _(pending)_    |      |       |
-| OD-05 | _(pending)_    |      |       |
-| OD-06 | _(pending)_    |      |       |
-| OD-07 | _(pending)_    |      |       |
-| OD-08 | _(pending)_    |      |       |
-| OD-09 | _(pending)_    |      |       |
-| OD-10 | _(pending)_    |      |       |
-| OD-11 | _(pending)_    |      |       |
+| ID    | Owner decision                                                                                                                | Date       | Notes                                                                  |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| OD-01 | **ACCEPTED** — Pro tier (or higher)                                                                                           | 2026-09-05 | Direct consequence of OD-06 acceptance (free tier has no MFA)          |
+| OD-02 | **ACCEPTED** — Option A (Clerk Organization ↔ Workspace, 1:1)                                                                 | 2026-09-05 | Application Workspace remains authoritative                            |
+| OD-03 | **ACCEPTED** — permission-based, no distinct `APPROVER` role                                                                  | 2026-09-05 | Via Role Model acceptance                                              |
+| OD-04 | **DEFERRED** — to Phase 11                                                                                                    | 2026-09-05 | Application-layer isolation remains mandatory in Phase 2               |
+| OD-05 | **DEFERRED** — role-based only for Phase 2                                                                                    | 2026-09-05 | Schema extensibility retained                                          |
+| OD-06 | **ACCEPTED** — risk-tiered (OWNER/ADMIN/high-risk financial: required; others: optional)                                      | 2026-09-05 | Not implemented in Phase 2A                                            |
+| OD-07 | Not addressed — no decision required                                                                                          | —          | Recommendation (Clerk-native, confirmed at implementation time) stands |
+| OD-08 | **ACCEPTED**, extended with audited-deletion requirement                                                                      | 2026-09-05 | Implement transactionally in Phase 2                                   |
+| OD-09 | Event name: not addressed (stands as pre-implementation check). Reconciliation frequency: **ACCEPTED** — 30 min, configurable | 2026-09-05 | Two distinct sub-items                                                 |
+| OD-10 | Not addressed — no decision required                                                                                          | —          | Recommendation (next-request-only) stands                              |
+| OD-11 | **ACCEPTED** — Clerk organization context                                                                                     | 2026-09-05 | Consistent with OD-02                                                  |
 
 ## 4. Supporting Investigation — Application Roles Review (task §6)
 
@@ -332,16 +429,16 @@ since the governing task's Required Documentation list does not include editing
 
 ## 7. Supporting Investigation — Identity Sync Assumptions (task §9)
 
-| Assumption Clerk cannot guarantee | Design response (already in `identity-sync.md`)                                                                                                                                                                                                                                                                                |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Duplicate events                  | Event-ID-keyed idempotency (§2 step 6)                                                                                                                                                                                                                                                                                         |
-| Missing events                    | Periodic reconciliation backstop (§4)                                                                                                                                                                                                                                                                                          |
-| Out-of-order events               | Timestamp-based conflict resolution + bounded-deferral tolerance for out-of-order parent/child events (§3)                                                                                                                                                                                                                     |
-| Deleted users                     | Non-blind-delete handling preserving audit attribution (§5)                                                                                                                                                                                                                                                                    |
-| Deleted organizations             | Mark-inactive, not hard-delete, preserving audit history (§1 `organization.deleted` row)                                                                                                                                                                                                                                       |
-| Revoked memberships               | Next-request re-check (OD-10), not real-time propagation                                                                                                                                                                                                                                                                       |
-| Webhook replay                    | Signature verification + event-ID idempotency together — a replayed, validly-signed old event is a no-op (§2, threat #14 in `identity-threat-model.md`)                                                                                                                                                                        |
-| Reconciliation frequency          | **Not yet specified in `identity-sync.md` — recommendation added here:** every 30 minutes as a Phase 2 starting point (mirrors the cadence order-of-magnitude reasonable for identity data, which changes far less often than Meta ad performance data); tunable based on real operational experience, not a hard requirement. |
+| Assumption Clerk cannot guarantee | Design response (already in `identity-sync.md`)                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate events                  | Event-ID-keyed idempotency (§2 step 6)                                                                                                                                                       |
+| Missing events                    | Periodic reconciliation backstop (§4)                                                                                                                                                        |
+| Out-of-order events               | Timestamp-based conflict resolution + bounded-deferral tolerance for out-of-order parent/child events (§3)                                                                                   |
+| Deleted users                     | Non-blind-delete handling preserving audit attribution (§5)                                                                                                                                  |
+| Deleted organizations             | Mark-inactive, not hard-delete, preserving audit history (§1 `organization.deleted` row)                                                                                                     |
+| Revoked memberships               | Next-request re-check (OD-10), not real-time propagation                                                                                                                                     |
+| Webhook replay                    | Signature verification + event-ID idempotency together — a replayed, validly-signed old event is a no-op (§2, threat #14 in `identity-threat-model.md`)                                      |
+| Reconciliation frequency          | **ACCEPTED (2026-09-05): every 30 minutes**, configurable — mirrors the cadence order-of-magnitude reasonable for identity data, which changes far less often than Meta ad performance data. |
 
 ## 8. Next.js Upgrade Recommendation
 
@@ -350,3 +447,12 @@ compatibility, breaking-change review, verification plan). Summary: **target `ne
 — the highest Next.js 15.x line explicitly validated by Clerk's own peer-dependency range,
 staying within the currently-selected major version (not jumping to Next.js 16, whose
 latest is `16.3.4` as of this verification). No upgrade performed in this phase.
+
+## 9. STOP — Phase 2A Closed, Phase 2 Implementation Not Yet Authorized
+
+All owner decisions above are recorded as ACCEPTED or DEFERRED. This closes the Phase 2A
+owner-decision gate (`phase-2a-gate-checklist.md`). Per the closure task's explicit Hard
+Restrictions, **no code, dependency, migration, or configuration change was made while
+recording these decisions** — Next.js has not been upgraded, Clerk has not been installed,
+no workspace/RBAC tables exist, and no authentication/authorization/Meta/AI/financial code
+has been written. Phase 2 implementation begins only on a separate, explicit go-ahead.

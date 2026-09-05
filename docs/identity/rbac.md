@@ -1,6 +1,6 @@
 # RBAC — Roles and Permissions
 
-**Document ID:** IDENT-005 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-005 | Version 1.2 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 `SEC-004` (RBAC_AUTHORIZATION.md) explicitly states its own example roles
 (OWNER/ADMIN/MARKETER/ANALYST/APPROVER/VIEWER) are "product concepts; exact permissions
@@ -19,10 +19,11 @@ model for Phase 2.
 | VIEWER               | **VIEWER**                          | Kept as-is — read-only.                                                                                                                                                                                                                                                                        |
 
 **Working role set for Phase 2: `OWNER`, `ADMIN`, `MANAGER`, `ANALYST`, `VIEWER`.**
-Whether `APPROVER` should instead be reinstated as a sixth distinct role (e.g., for
-agencies wanting a client-side approver with no other management rights) is recorded as an
-open decision in `phase-2a-decisions.md` — the permission-based model above is the
-recommendation, not a final decision.
+**Owner-accepted 2026-09-05** (`phase-2a-owner-decision-package.md` OD-03, via the owner's
+Role Model acceptance): `APPROVER` is modeled as a permission (`budget.approve`), not a
+sixth distinct role. If a concrete future requirement emerges (e.g., agencies wanting a
+client-side approver with no other management rights), reinstating it as a distinct role
+would need a new decision — this is not expected to be revisited without one.
 
 ## 2. Role Semantics
 
@@ -132,12 +133,15 @@ financial execution logic exists or is designed for execution in this phase** �
 permission names exist now so the database schema and authorization primitives don't need
 a breaking change when Phase 9 arrives.
 
-## 5. Per-Membership Overrides (explicit non-decision)
+## 5. Per-Membership Overrides (DEFERRED, owner-accepted 2026-09-05)
 
 Whether a specific membership can be granted permissions beyond its role's default (e.g. a
-MANAGER granted `budget.approve` for one workspace without becoming a full ADMIN) is left
-open — see `phase-2a-decisions.md` and `identity-data-model.md` §Role/Permission Storage
-Reasoning for the schema implication either way.
+MANAGER granted `budget.approve` for one workspace without becoming a full ADMIN) is
+**DEFERRED** (`phase-2a-owner-decision-package.md` OD-05): Phase 2 uses role-based
+authorization only (`Membership → Role → RolePermissions`); the
+`membership_permission_overrides` table stays an unpopulated schema placeholder — see
+`identity-data-model.md` §Role/Permission Storage Reasoning — until a real customer
+requirement justifies building the feature.
 
 ## 6. Dangerous-Permission Discipline
 

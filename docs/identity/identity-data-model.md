@@ -1,6 +1,6 @@
 # Identity Data Model
 
-**Document ID:** IDENT-010 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-010 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 **This is a schema design, not a migration.** No Prisma model is added to
 `packages/domain/prisma/schema.prisma` in this phase, and no migration is generated — per

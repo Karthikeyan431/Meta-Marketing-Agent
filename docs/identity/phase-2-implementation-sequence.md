@@ -1,11 +1,18 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.0 | Status: PROPOSED | Phase: 2A (Decision Preparation)
+**Document ID:** IDENT-015 | Version 1.1 | Status: FINALIZED (Owner-Accepted 2026-09-05) — Phase 2 Implementation NOT Yet Authorized | Phase: 2A (Decision Preparation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
 version bump described in §1 is a recommendation for Phase 2's first implementation step,
 not something performed in this phase.
+
+**2026-09-05 update:** the owner's "Approve Phase 2A Identity Decisions" closure message
+finalized the implementation sequence in §2 below (superseding the previously PROPOSED
+12-step order) and resolved the owner-decision prerequisites named in §3. **Finalizing the
+sequence is not the same as authorizing Phase 2 to begin** — per that closure message's
+explicit Hard Restrictions, no step below has been started; a separate, explicit
+go-ahead is still required before step 1 may start.
 
 ## 1. Next.js Upgrade Recommendation
 
@@ -57,10 +64,66 @@ engineering blocker, not an owner decision — recorded in `phase-2a-decisions.m
    `proxy.ts`, which is a v16-only concept per `clerk-integration.md`) integration pattern
    already designed in `clerk-integration.md`/`identity-architecture.md`.
 
-## 2. Proposed Phase 2 Implementation Order
+## 2. Finalized Phase 2 Implementation Order (owner-accepted 2026-09-05)
 
-Refines the governing task's suggested skeleton order based on the architecture actually
-designed in Phase 2A. Each step names its concrete dependency on the step(s) before it.
+This supersedes the previously PROPOSED 12-step order below with the sequence the owner's
+closure message finalized. Each step's dependency on the step(s) before it is noted;
+`phase-2a-owner-decision-package.md`'s OD references show which decisions each step relies
+on (all now ACCEPTED/DEFERRED, none blocking).
+
+1. **Next.js compatibility upgrade** (§1) — no dependents can start without this; pure
+   dependency/build-config work, touches no identity logic. Target: `next@^15.5.9`.
+2. **Clerk installation/configuration** — depends on step 1. Plan (OD-01: Pro tier or
+   higher) and Organization mapping (OD-02: Option A) are both ACCEPTED, so this step is
+   unblocked by owner decision; webhook signing secret issuance and environment variables
+   follow `SECURITY_BOUNDARY.md`'s existing secret-handling rules.
+3. **Application User** — the `users` table (`identity-data-model.md` §2), keyed by
+   `clerk_user_id` — depends on step 2 existing to have a Clerk identity to key against.
+4. **Workspace** — the `workspaces` table, including the `clerk_org_id` reference column
+   per OD-02's Option A — depends on step 2.
+5. **Workspace Membership** — the `workspace_memberships` join table — depends on steps 3
+   and 4.
+6. **Role model** — the `role` enum on `Membership` (`rbac.md` §1/§3, OD-03 resolved:
+   `OWNER/ADMIN/MANAGER/ANALYST/VIEWER`, no separate `APPROVER`) — depends on step 5.
+7. **Permission model** — `permissions`/`role_permissions` tables and the
+   `membership_permission_overrides` placeholder (unpopulated per OD-05) —
+   depends on step 6.
+8. **Authorization primitives** — `requireAuth()/requireWorkspace()/requireMembership()/
+requirePermission()/requireResourceAccess()` (`authorization.md` §1, owner-accepted
+   Authorization Contract) — depends on steps 3–7 existing to have real data to check
+   against.
+9. **Resource-level authorization** — the `WHERE id AND workspace_id` mechanical rule
+   (`authorization.md` §2) applied to whichever resources exist at this point — depends
+   on step 8; this is the primitive every future resource (campaigns, reports, etc., built
+   in later phases) will call.
+10. **Workspace-aware API protection** — wiring steps 8–9 into actual route handlers
+    (`identity-api-contracts.md`) — depends on step 9.
+11. **Clerk/application identity synchronization** — webhook handlers + reconciliation job
+    (`identity-sync.md`), reconciliation baseline ACCEPTED at every 30 minutes,
+    configurable (OD-09) — depends on steps 3–5 existing to sync _into_; the exact
+    membership-created event name (OD-09's other sub-item) is confirmed against the live
+    Dashboard immediately before this step's membership-creation handler specifically.
+12. **Frontend auth/session** — `<ClerkProvider>`, sign-in/sign-up UI — depends on step 2.
+13. **Workspace switching** — the switching flow (`workspace-model.md` §4), including the
+    owner-accepted active-workspace resolution chain (`Clerk user → Clerk org context →
+application membership → workspace status → authorized workspace`, OD-11) — depends
+    on steps 8–10, 12.
+14. **Tenant-isolation tests** — the negative-test catalog (`multi-tenancy.md` §4,
+    `identity-threat-model.md`) — depends on steps 8–11 existing to test against.
+15. **Security regression tests** — MFA policy (OD-06: required for OWNER/ADMIN and
+    high-risk financial approval), step-up enforcement, worker authorization context
+    (owner-accepted field set: `workspaceId`, `initiatingUserId`/actor, resource scope,
+    action scope, `correlationId`, `jobId`), AI-authorization independence — depends on
+    steps 8–14.
+16. **Manual UAT** — depends on all preceding steps landing and passing their own tests.
+
+**Explicit non-dependency note:** Postgres RLS (OD-04, deferred to Phase 11) and building
+out per-membership permission overrides beyond the schema placeholder (OD-05) have no step
+above — they are intentionally absent from the Phase 2 sequence per their respective
+decisions.
+
+<details>
+<summary>Previously PROPOSED 12-step order (superseded 2026-09-05 — kept for traceability, not for use)</summary>
 
 1. **Next.js version bump** (§1) — no dependents can start without this; it is pure
    dependency/build-config work, touches no identity logic.
@@ -102,22 +165,26 @@ designed in Phase 2A. Each step names its concrete dependency on the step(s) bef
     governing SDLC pattern for this project has been to verify incrementally rather than
     in one final pass.
 
-**Explicit non-dependency note:** Postgres RLS (OD-04, deferred to Phase 11) and
-per-membership permission overrides (OD-05, schema-only) have no step above — they are
-intentionally absent from the Phase 2 sequence per their respective decisions.
+</details>
 
-## 3. Open Prerequisites Before Step 1 Can Start
+## 3. Owner-Decision Prerequisites — Resolved 2026-09-05
 
 Per §3 of `phase-2a-decisions.md` and this document's OD numbering
-(`phase-2a-owner-decision-package.md`), the following owner decisions should be resolved
-before their respective steps, not before Phase 2 begins entirely:
+(`phase-2a-owner-decision-package.md`), the following owner decisions gated their
+respective steps above. **All are now resolved** (ACCEPTED or DEFERRED — see
+`phase-2a-owner-decision-package.md` §1/§3 for the full record):
 
-- OD-01 (Clerk plan) and OD-02 (Organization mapping) — before step 3.
-- OD-06 (MFA policy) — before step 9.
-- All other open decisions (OD-03, OD-05, OD-07, OD-08, OD-09, OD-10, OD-11) have a
-  stated recommendation that can proceed by default at their respective step unless the
-  owner overrides it.
+- OD-01 (Clerk plan: ACCEPTED — Pro tier or higher) and OD-02 (Organization mapping:
+  ACCEPTED — Option A) — previously gated step 2 (now step 2, Clerk installation), no
+  longer blocked.
+- OD-06 (MFA policy: ACCEPTED — risk-tiered) — previously gated the MFA step, no longer
+  blocked; implemented as part of step 15 (Security regression tests) alongside step 8's
+  authorization primitives.
+- All other decisions (OD-03, OD-04, OD-05, OD-07, OD-08, OD-09, OD-10, OD-11) are resolved
+  per the owner decision package — either ACCEPTED/DEFERRED as recorded, or (OD-07, OD-09's
+  event-name sub-item, OD-10) confirmed to need no owner decision, so the stated
+  recommendation applies by default.
 
-Step 1 (Next.js bump) and step 2 (schema migration) have no open-decision dependency and
-could begin as soon as Phase 2 is explicitly authorized to start — which, per this task's
-Hard Restrictions, has not happened yet.
+**No open-decision dependency remains for any step in §2.** The only remaining blocker to
+starting step 1 is explicit Phase 2 implementation authorization itself — which, per the
+governing closure task's Hard Restrictions, has not been given yet.

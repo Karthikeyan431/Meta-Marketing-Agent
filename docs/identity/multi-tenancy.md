@@ -1,6 +1,6 @@
 # Multi-Tenancy Model
 
-**Document ID:** IDENT-004 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-004 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Workspace is the tenant boundary for the entire application. This document makes
 `DATA-004` (TENANT_ISOLATION.md) and `SEC-005` (TENANT_SECURITY.md) concrete for every
@@ -51,11 +51,10 @@ single modular-monolith deployment (`ADR-001-MODULAR-MONOLITH`).
    §1's `requireResourceAccess()`).
 2. **Database-level row-level security (RLS) may be added as an additional layer** but
    must never be the _only_ enforcement point or a substitute for #1 (`DATA-004` §Defense
-   in Depth). Whether to actually implement Postgres RLS is an open Phase 2 implementation
-   decision — recorded in `phase-2a-decisions.md` — not resolved here, since it is a
-   defense-in-depth _addition_, not a replacement, and its absence does not by itself
-   violate the tenant-isolation requirement as long as #1 is correctly and universally
-   applied.
+   in Depth). **DEFERRED to Phase 11 (owner decision, 2026-09-05 —
+   `phase-2a-owner-decision-package.md` OD-04):** Postgres RLS is not implemented during
+   Phase 2; #1 (application-layer enforcement) remains mandatory and is never replaced by
+   RLS, consistent with `DATA-004`.
 
 ## 3. Rules Restated Per Resource Class
 

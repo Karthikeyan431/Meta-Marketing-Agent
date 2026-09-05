@@ -1,6 +1,6 @@
 # Identity API Contracts
 
-**Document ID:** IDENT-011 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-011 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Contracts only, per `API_CONTRACTS.md`'s (API-003) envelope conventions already
 established in Phase 1 (`{data, meta}` / `{error: {code, message, requestId}}`). No route is

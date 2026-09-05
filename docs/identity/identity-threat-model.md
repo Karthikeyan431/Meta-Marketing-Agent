@@ -1,6 +1,6 @@
 # Identity & Multi-Tenancy Threat Model — Phase 2
 
-**Document ID:** IDENT-009 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-009 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Extends `THREAT_MODEL.md` (SEC-002) for the identity/multi-tenancy surface specifically.
 Every threat below maps to a control already specified in `authorization.md`,

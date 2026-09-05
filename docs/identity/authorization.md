@@ -1,6 +1,6 @@
 # Authorization
 
-**Document ID:** IDENT-003 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-003 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Defines the server-side authorization primitives every protected code path will call, their
 contracts and responsibilities, and the deterministic HTTP status rules that prevent

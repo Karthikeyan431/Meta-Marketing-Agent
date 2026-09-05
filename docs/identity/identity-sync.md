@@ -1,6 +1,6 @@
 # Clerk ↔ Application Synchronization
 
-**Document ID:** IDENT-008 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-008 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Design only — no webhook endpoint, no event handler, and no Clerk webhook subscription is
 created in this phase. This mirrors the already-approved pattern for Meta synchronization
@@ -67,8 +67,9 @@ delivery on a retry schedule — finding #9). This design therefore:
 ## 4. Reconciliation (the backstop, per finding #9)
 
 Because Clerk explicitly states webhooks are not guaranteed to be delivered "immediately or
-at all," a periodic reconciliation job (exact schedule is a Phase 2 implementation
-decision) pulls current organization/membership state from Clerk's Backend API and
+at all," a periodic reconciliation job — **ACCEPTED (owner decision, 2026-09-05 —
+`phase-2a-owner-decision-package.md` OD-09): every 30 minutes, configurable** — pulls
+current organization/membership state from Clerk's Backend API and
 reconciles it against our database using the same fetch → normalize → upsert-by-external-
 identity → mark-observed pattern already established and approved for Meta sync
 (`SYNC_DATA_MODEL.md`). This is the same architectural pattern, reused, not a new one

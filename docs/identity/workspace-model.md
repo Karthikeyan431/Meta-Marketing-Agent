@@ -1,6 +1,6 @@
 # Workspace Model
 
-**Document ID:** IDENT-007 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-007 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 ## 1. Entities
 
@@ -19,9 +19,12 @@ Permission      — the catalog in rbac.md §3
 
 ## 2. Clerk Organization ↔ Application Workspace Mapping
 
-**Recommendation (proposed, not decided — see `phase-2a-decisions.md`): one Clerk
-Organization per application Workspace, 1:1, with our `workspaces` table holding a
-`clerk_org_id` reference column.**
+**ACCEPTED (owner decision, 2026-09-05 — `phase-2a-owner-decision-package.md` OD-02):** one
+Clerk Organization per application Workspace, 1:1, with our `workspaces` table holding a
+`clerk_org_id` reference column. The application Workspace remains the authoritative domain
+entity — resource ownership, application roles/permissions, Meta assets, policies, actions,
+and audit all stay in our own database; Clerk Organization provides identity/membership
+context only.
 
 Rationale:
 
@@ -35,23 +38,26 @@ Rationale:
   that matters to `requirePermission()`. See `clerk-integration.md` finding #6 and
   `authorization.md` §1.
 - The 1:1 mapping has the cost implication already flagged in `clerk-integration.md`
-  finding #5 (free-tier MRO limits) — an explicit open decision, not resolved here. An
-  alternative (Clerk used only for individual user identity, with Workspace existing
-  purely in our own database with no Clerk Organization counterpart at all) remains viable
-  and is recorded as the fallback option in `phase-2a-decisions.md`.
+  finding #5 (free-tier MRO limits) — accepted by the owner as part of this decision (and
+  superseded in practice by the Pro-tier acceptance for MFA, `phase-2a-owner-decision-package.md`
+  OD-01), not a reason to revisit this mapping unless workspace count later approaches
+  whatever cap the account in use actually has.
 
 ## 3. Active Workspace Resolution
 
 For a signed-in user with one or more memberships, the **active workspace** for a given
 request is resolved server-side as follows, every request, never cached client-side as an
-authorization fact:
+authorization fact. **ACCEPTED (owner decision, 2026-09-05 — `phase-2a-owner-decision-package.md`
+OD-11 and its "Active Workspace" closure item):** the resolution chain is `Authenticated
+Clerk user → Clerk organization context → Application membership → Workspace status →
+Authorized workspace`, concretely:
 
 1. Resolve the authenticated Clerk identity (`requireAuth()`).
-2. Determine the _claimed_ active workspace: a value stored in a **server-controlled**
-   session-adjacent record (not a bare cookie/header value trusted at face value) — the
-   exact storage mechanism (Clerk session claim vs. our own server-side session/cache
-   record) is a Phase 2 implementation decision, not resolved here; either way the value is
-   never taken as authorization-sufficient on its own.
+2. Determine the _claimed_ active workspace from **Clerk's organization context** (the
+   active-organization session claim, consistent with OD-02's Option A) — a
+   server-controlled value, never a bare cookie/header value trusted at face value. The
+   client may request a workspace context, but this claim alone is never
+   authorization-sufficient on its own.
 3. Run `requireMembership()` against that claimed workspace ID. If it fails (revoked,
    deleted, never valid, or forged), the request is rejected — the server never silently
    falls back to "pick any workspace this user belongs to" for a request that explicitly
@@ -87,10 +93,14 @@ browser's request is only ever a _request to switch_, never a switch itself.
 ## 5. Invariants
 
 - A workspace can never end up with zero `OWNER` memberships as a side effect of a member
-  removal, role change, or workspace deletion race — the exact mechanism (block the last
-  owner from removing themselves; require explicit ownership transfer first) is a Phase 2
-  implementation decision, not resolved here, but the invariant itself is a hard
-  requirement.
+  removal, role change, or workspace deletion race. **ACCEPTED (owner decision, 2026-09-05
+  — `phase-2a-owner-decision-package.md` OD-08):** block the last owner from removing
+  themselves or being removed; require an explicit ownership transfer first, implemented
+  transactionally. **Extended by the owner (closure message's "Workspace Lifecycle"
+  item):** the application must never silently orphan a workspace, and workspace
+  deletion/closure must be explicitly authorized and audited — both Clerk organization
+  lifecycle and application workspace lifecycle are maintained together, not just the
+  application side.
 - Deactivating/removing a membership takes effect on the **next** request check, not
   retroactively on requests already in flight, and not delayed by any caching of
   membership state beyond the lifetime of a single request (`DATA-004` rule #7's

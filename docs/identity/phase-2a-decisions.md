@@ -1,6 +1,12 @@
 # Phase 2A Decisions
 
-**Document ID:** IDENT-012 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-012 | Version 1.1 | Status: CLOSED (2026-09-05) — see `phase-2a-owner-decision-package.md` for the recorded owner decisions | Phase: 2A (Architecture Finalization)
+
+**Closure note (2026-09-05):** every decision recorded in §1 and §2 below has now been
+either ACCEPTED or DEFERRED by the owner. This document is retained as the original
+proposal record; `phase-2a-owner-decision-package.md` is the authoritative record of what
+was actually decided, including the exact ACCEPTED/DEFERRED status, date, and any
+refinements the owner added.
 
 ## 1. Required Decision Table
 

@@ -1,6 +1,6 @@
 # Authentication
 
-**Document ID:** IDENT-002 | Version 1.0 | Status: Draft for Approval | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-002 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
 
 Scope: what Clerk is responsible for, and the exact behavior required for every
 authentication state the application can be in. Session/token security requirements are
@@ -70,10 +70,19 @@ addition to**, never instead of, the normal permission check. A successful step-
 "this is really the authenticated human right now"; it does not itself grant a permission
 the user's role does not already hold.
 
+**Owner-reconfirmed 2026-09-05** (`phase-2a-owner-decision-package.md` OD-06/OD-07): the
+requirement that high-risk financial operations support step-up authentication before
+final approval/execution is ACCEPTED. The exact mechanism (Clerk-native vs. custom) was not
+addressed in the closure message — no owner decision was required for it in the first
+place (see OD-07 point 12) — so it remains a Phase 2 implementation-time verification.
+
 ## 5. Multi-Factor Authentication
 
 `SEC-003` leaves MFA as "optional/required according to risk tier" without defining the
-tiers. **Not resolved in this phase** — recorded as an open decision in
-`phase-2a-decisions.md`. Clerk supports MFA natively; the policy question (which roles or
-operations require it) is a product/security decision for the owner, not inferable from
-existing documents.
+tiers. **ACCEPTED (owner decision, 2026-09-05 — `phase-2a-owner-decision-package.md`
+OD-06):** MFA is required for `OWNER`, `ADMIN`, and any high-risk financial approval
+(`budget.approve`/`budget.execute` — `rbac.md` §3); it may remain optional initially for
+`MANAGER`, `ANALYST`, and `VIEWER`. This requires a Clerk plan tier that supports MFA (the
+free plan does not — `clerk-integration.md` finding #5/§3; see OD-01's Pro-tier
+acceptance). **Not implemented during Phase 2A** — MFA enforcement itself is a Phase 2
+implementation task.
