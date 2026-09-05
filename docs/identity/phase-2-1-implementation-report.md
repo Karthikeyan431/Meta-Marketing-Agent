@@ -86,18 +86,23 @@ application was created; no Clerk Dashboard configuration was touched.
   project has verified secret-scan results in prior phases.
   **A real CI failure occurred and was diagnosed and fixed, not suppressed:** the first
   push of this phase's changes failed CI's "Secret scan" step — gitleaks' `stripe-access-token`
-  rule flagged `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder` and
-  `CLERK_SECRET_KEY=sk_test_placeholder` in `.env.example` and this report. Root cause:
-  Clerk and Stripe share the `pk_`/`sk_` key-prefix convention, so a placeholder shaped
-  like a real Clerk key is indistinguishable, by pattern, from a real Stripe key — this is
-  gitleaks correctly matching the _shape_ of the string, not a real secret being present
-  (no Clerk application or credential exists anywhere in this session). **Fix:** the
-  placeholders were reworded to `replace-with-real-clerk-publishable-key` /
-  `replace-with-real-clerk-secret-key` / `replace-with-real-clerk-webhook-signing-secret` —
-  values that read unambiguously as placeholders and no longer match any credential-shaped
-  regex, in both `.env.example` and this report. No gitleaks configuration, allowlist, or
-  suppression rule was added or touched — the fix removes the false-positive trigger at its
-  source instead of silencing the scanner. Re-verified: manual review of every file this
+  rule flagged the two Clerk publishable/secret key placeholders originally added to
+  `.env.example` and this report. Root cause: those placeholders were written in Clerk's
+  own real key-prefix shape (the same two-letter-plus-underscore prefix convention Stripe
+  also uses for its keys), so a placeholder in that shape is indistinguishable, by pattern,
+  from a real Stripe key — this is gitleaks correctly matching the _shape_ of the string,
+  not a real secret being present (no Clerk application or credential exists anywhere in
+  this session). **Fix:** the placeholders were reworded to a plain, descriptive
+  non-key-shaped form (`replace-with-real-clerk-publishable-key` and sibling names — see
+  §3's code block for the exact current values) that reads unambiguously as a placeholder
+  and no longer matches any credential-shaped regex, in both `.env.example` and this
+  report (this paragraph included, deliberately, since a prior revision of this very
+  paragraph quoting the old key-shaped placeholder literally was itself re-flagged by
+  gitleaks on the next push — worth knowing if this incident is ever revisited: the fix
+  must remove the pattern from every file, including narrative documentation, not just the
+  `.env.example` source). No gitleaks configuration, allowlist, or suppression rule was
+  added or touched — the fix removes the false-positive trigger at its source instead of
+  silencing the scanner. Re-verified: manual review of every file this
   phase touched (`apps/web/package.json`, `pnpm-lock.yaml`, `.env.example`, this report)
   confirms no secrets, tokens, or credentials — only clearly-worded placeholder strings.
 - **Middleware boundary:** No `middleware.ts` (or `proxy.ts`) file exists in the repository
@@ -145,7 +150,7 @@ written that could introduce them.
 | Web production build | **Locally: PARTIAL — environment, not code.** `next build` compiles, type-checks, and statically generates all 4 pages successfully using the correct `15.5.25` binary; only the final Windows-only "collecting build traces" step fails with `EPERM` on symlink creation (Windows requires Developer Mode or Administrator privileges for this). **On CI (run 33967395383, Ubuntu): PASS** — confirms this is purely a Windows-host limitation, not present in the Linux environment this project actually deploys from.                                                                             |
 | Docker               | **NOT VERIFIED — environment (see §8).** Docker Desktop's CLI/API did not respond during this session despite its background processes running; a build attempt against `apps/web/Dockerfile` produced zero output after 15+ minutes and was stopped. The repository's CI does not currently include a Docker build step either (confirmed by reading `.github/workflows/ci.yml`) — this is a pre-existing gap in the pipeline, not something introduced or resolved by this phase.                                                                                                                   |
 | E2E                  | **Locally: PASS** (3/3, once the dev server was pre-warmed — see §9). **On CI (run 33967395383): PASS.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Secret scan          | **First CI push: FAIL (real finding, diagnosed and fixed — see §4).** Gitleaks' `stripe-access-token` rule matched the `pk_test_placeholder`/`sk_test_placeholder` Clerk env placeholders (Clerk and Stripe share the `pk_`/`sk_` key-prefix shape). Fixed by rewording the placeholders to a non-credential-shaped form; re-pushed for re-verification (§6/§10 of the Final Report has the resulting run).                                                                                                                                                                                           |
+| Secret scan          | **First two CI pushes: FAIL (real finding, diagnosed and fixed each time — see §4).** Gitleaks' `stripe-access-token` rule matched the original key-shaped Clerk env placeholders (Clerk and Stripe share the same key-prefix convention), then re-matched this document's own first attempt at describing that placeholder literally. Fixed by rewording the placeholders to a non-credential-shaped form in `.env.example` and removing the literal old value from this document's own prose; re-pushed for re-verification (§6/§10 of the Final Report has the resulting run).                     |
 
 ## 6. CI
 
