@@ -1,6 +1,6 @@
 # Authorization
 
-**Document ID:** IDENT-003 | Version 1.1 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-003 | Version 1.2 | Status: Approved (Owner Decision, 2026-09-05); §§8–10 added Phase 2.4A (2026-09-10, architecture finalization — see `phase-2-4a-decisions.md`) | Phase: 2A / 2.4A
 
 Defines the server-side authorization primitives every protected code path will call, their
 contracts and responsibilities, and the deterministic HTTP status rules that prevent
@@ -166,3 +166,88 @@ Action policy evaluation, financial limit enforcement, and the approval workflow
 are `SEC-009`/`SEC-010` concerns and are Phase 9 (Controlled AI Actions) implementation
 scope. This document stops at "is this call allowed to reach the resource at all" — the
 next question, "is this specific mutation within policy," is a distinct, later gate.
+
+## 8. Permission Resolution Mechanics (Phase 2.4A)
+
+The task governing Phase 2.4A requires an explicit answer to "does a permission check query
+the database, a cache, or a precomputed structure — and if cached, what are the
+invalidation/staleness/fail-open risks." The chain has **two distinct resolution steps with
+two different mechanisms**, deliberately not treated the same way:
+
+### 8.1 Membership → Role: always a live, uncached database query
+
+`requireWorkspaceMembership()`/`resolveActiveWorkspace()` (`apps/api/src/plugins/
+authorization.ts`) query `WorkspaceMembership` fresh, scoped to `(userId, workspaceId)`, on
+**every single request** — there is no request-scoped, process-scoped, or distributed cache
+of membership/role state anywhere in the codebase. A role change, membership removal, or
+workspace-status change takes effect on the **very next request** that user makes, with zero
+propagation delay. This directly satisfies `workspace-model.md` §5's "deactivating/removing
+a membership takes effect on the next request check, not retroactively."
+
+**Consequence for the "stale permission cache" threat class** (`identity-threat-model.md`
+#6/#7): it is structurally not applicable to this codebase as built — there is no cache to
+go stale. If a future performance requirement ever motivates adding one, that is a new
+architectural decision requiring its own ADR and threat-model update; it must not be added
+silently as an optimization.
+
+### 8.2 Role → Permission: a static, in-process, compile-time catalog — not a runtime cache
+
+`roleHasPermission()` (`packages/domain/src/rbac-catalog.ts`) checks against
+`PERMISSION_CATALOG`, a `readonly` array literal compiled directly into the deployed
+application code — not fetched from the database at request time, not fetched at process
+startup either. This is deliberately **not** "caching" in the sense the task's design
+questions are probing (there is no live data being cached-with-a-TTL; the role→permission
+matrix only changes via a code change, code review, and a full CI/CD deploy — the same
+change-control path as any other authorization-relevant code). The `permissions`/
+`role_permissions` database tables (seeded from this same catalog via `prisma/seed.ts`) exist
+so the matrix is queryable/auditable as data (identity-data-model.md §1's rationale) and so
+`rbac-seed.test.ts` can assert the two never drift apart — they are not an alternative,
+independently-mutable source of truth the runtime reads from.
+
+**Fail-open vs. fail-closed:** `roleHasPermission()` returns `false` for any role/permission
+pair it doesn't recognize (including a typo'd permission key or a role somehow absent from
+`ROLES`) — never throws, never defaults to allow. `requirePermission()` treats a `false`
+result identically to an explicit deny: it throws `AuthorizationError` (403). **The system is
+fail-closed by construction at every layer of this chain** — consistent with `BUSINESS_RULES.md`
+BR-007 ("if policy evaluation cannot establish that an action is safe and permitted,
+execution must fail closed"), which this satisfies for the authorization layer specifically
+(BR-007 itself is a Phase 9 action-policy rule; this section confirms the identity/RBAC layer
+those future policies build on already upholds the same discipline).
+
+### 8.3 What Phase 2.4A explicitly decides, and what remains open
+
+**Decision (ENGINEERING DEFAULT):** no runtime authorization cache (membership, role, or
+permission) is introduced in Phase 2.4. If a future phase's load profile requires one, it
+must be proposed as its own ADR with an explicit invalidation strategy and fail-closed
+default — this document's current position (§8.1/§8.2) is the fail-closed baseline any
+future caching proposal must not regress below.
+
+## 9. Self-Escalation Enforcement (Phase 2.4A)
+
+The concrete rules for who may assign/change/remove a role, and the specific OWNER-
+assignment gap identified during Phase 2.4A review, are specified in `rbac.md` §8 — that
+document owns the role-mutation rule set; this document's role is only to name where in the
+primitive chain the check belongs: a role-mutation endpoint's authorization chain is
+`requireAuth() → requireWorkspaceMembership() → requirePermission(actorMembership,
+"members.update")`, followed by the **resource-shaped** checks in `rbac.md` §8.2/§8.3 (target
+membership belongs to the same workspace, target role comparison, self-mutation block, owner
+invariant) — those are business-rule checks a permission grant alone cannot express, exactly
+analogous to how `requireResourceAccess()` is a distinct step from `requirePermission()` for
+any other resource.
+
+## 10. AI and Worker Authorization — Formal Contracts (Phase 2.4A)
+
+§4 (Workers) and §6 (AI) above state the governing principles. Phase 2.4A formalizes both
+into complete, implementation-ready contracts, each in its own document so a future AI-tool
+or worker-job implementer needs no further architectural discussion:
+
+- **`ai-authorization-contract.md`** — the exact fields every AI tool invocation must carry,
+  the mandatory re-check-before-execution sequence, and worked examples (including the
+  governing task's own "Pause Campaign X" example).
+- **`worker-authorization-contract.md`** — the exact job-payload authorization-context field
+  set, behavior on revoked/changed/removed actors mid-flight, retry-vs-authorization-failure
+  handling, and the open question of what actor identity an _autonomous_ (non-human-
+  initiated) run uses.
+
+Both remain unimplemented in Phase 2.4A (no AI tools, no new worker job types exist yet) —
+these contracts exist so their eventual implementers do not re-derive the design.

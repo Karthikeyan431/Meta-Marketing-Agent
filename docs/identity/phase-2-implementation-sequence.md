@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.3 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.4 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized, Phase 2.4 implementation not started) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -32,6 +32,16 @@ available and the full authentication boundary was re-verified end-to-end agains
 real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
 No code change was required. This closes the "no real Clerk application" limitation
 carried since Phase 2.1/2.2.
+
+**Phase 2.4A (2026-09-10):** RBAC & Permission Enforcement architecture finalized —
+`rbac.md` (role hierarchy model, role mutation/self-escalation rules),
+`permission-catalog.md` (new), `authorization.md` (permission resolution mechanics),
+`ai-authorization-contract.md` (new), `worker-authorization-contract.md` (new),
+`identity-threat-model.md` (threats #16–#23), `phase-2-4a-test-matrix.md` (new),
+`phase-2-4a-decisions.md` (new, 4 owner decisions recorded, none blocking), ADR-025–ADR-028.
+**No code was written or changed** — architecture-only per that task's Hard Restrictions.
+See `phase-2-4a-gate-checklist.md` for the full closure record. §4 below is the resulting
+Phase 2.4 implementation sequence.
 
 **Phase 2.3 (2026-09-10):** steps 3–11 (Application User, Workspace, Workspace
 Membership, Role model, Permission model, Authorization primitives, Resource-level
@@ -198,6 +208,40 @@ application membership → workspace status → authorized workspace`, OD-11) �
 out per-membership permission overrides beyond the schema placeholder (OD-05) have no step
 above — they are intentionally absent from the Phase 2 sequence per their respective
 decisions.
+
+## 4. Phase 2.4 Implementation Sequence (planning input — produced by Phase 2.4A, not yet authorized to execute)
+
+Fully specified by Phase 2.4A's architecture documents; no further design discussion should
+be required to execute these steps once Phase 2.4 is explicitly authorized.
+
+1. **Close the `changeMembershipRole()` OWNER-assignment gap** — reject `newRole ===
+"OWNER"` unconditionally (`rbac.md` §8.2). This is a correctness fix to existing Phase
+   2.3 code, not new functionality — sequenced first because every subsequent step
+   (member-management routes) depends on the underlying function being safe to expose.
+2. **Implement member-management API routes**: `POST /workspaces/:id/members/invite`,
+   `PATCH /workspaces/:id/members/:membershipId` (role change), `DELETE
+/workspaces/:id/members/:membershipId` (removal) — each enforcing the full chain
+   `requireAuth() → requireWorkspaceMembership() → requirePermission(members.invite/
+update/remove) → rbac.md §8.2's role-comparison and self-mutation checks →
+requireResourceAccess() on the target membership` — depends on step 1.
+3. **Implement `POST /workspaces/:id/ownership-transfer`** wrapping `transferOwnership()`
+   with the same authorization chain — depends on step 1.
+4. **Write the 9 `REQUIRED (Phase 2.4)` tests** from `phase-2-4a-test-matrix.md` (W4, E1–E4,
+   C2, C3, F5, plus the E5-adjacent full spoof-coverage extension) — depends on steps 2–3
+   existing to test against for the route-level cases; the domain-layer cases (E1, E2, C2)
+   can be written against step 1 directly, ahead of the routes.
+5. **Extend `AuditEvent` coverage** for the two new route categories (member-management,
+   ownership-transfer-via-API) — the underlying domain functions already write audit events
+   (Phase 2.3); this step is route-level verification that the existing audit calls are
+   reached correctly through the new HTTP surface, not new audit-logging code.
+6. **Regression**: full existing Phase 2.3 test suite (117 tests) must remain green
+   throughout steps 1–5.
+
+**Explicitly out of scope for Phase 2.4** (per Phase 2.4A's Hard Restrictions and this
+sequence's own scope): AI tool implementation, worker job-signing changes, autonomous
+optimization, Meta integration, financial execution, PostgreSQL RLS, membership permission
+overrides — all remain exactly as deferred in §3 above and in
+`phase-2-4a-decisions.md`.
 
 <details>
 <summary>Previously PROPOSED 12-step order (superseded 2026-09-05 — kept for traceability, not for use)</summary>

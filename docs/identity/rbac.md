@@ -1,6 +1,6 @@
 # RBAC — Roles and Permissions
 
-**Document ID:** IDENT-005 | Version 1.2 | Status: Approved (Owner Decision, 2026-09-05) | Phase: 2A (Architecture Finalization)
+**Document ID:** IDENT-005 | Version 1.3 | Status: Approved (Owner Decision, 2026-09-05); §§7–9 added Phase 2.4A (2026-09-10, architecture finalization — see `phase-2-4a-decisions.md`) | Phase: 2A / 2.4A
 
 `SEC-004` (RBAC_AUTHORIZATION.md) explicitly states its own example roles
 (OWNER/ADMIN/MARKETER/ANALYST/APPROVER/VIEWER) are "product concepts; exact permissions
@@ -152,3 +152,119 @@ are catalogued now for schema/API-contract stability, but no code path may allow
 actually cause a Meta mutation until Phase 9's action/policy/approval pipeline is built —
 holding the permission in Phase 2–8 is inert by construction, because the execution
 pipeline it would authorize does not exist yet.
+
+## 7. Role Hierarchy Model (Phase 2.4A)
+
+**Decision (ENGINEERING DEFAULT, consistent with the Phase 2.3 implementation as already
+built): the role model is a flat, enumerated capability matrix — not a hierarchy, not
+inheritance.** This is a Phase 2.4A architecture question the task explicitly requires
+answering rather than assuming ("do not assume OWNER > ADMIN > MANAGER > ANALYST > VIEWER
+automatically means inheritance").
+
+**What this means concretely:** `PERMISSION_CATALOG` (`packages/domain/src/rbac-catalog.ts`)
+grants each permission to an explicit, independently-authored list of roles (e.g.
+`campaign.read: [OWNER, ADMIN, MANAGER, ANALYST, VIEWER]`, `budget.approve: [OWNER, ADMIN]`).
+`roleHasPermission(role, permission)` is a direct set-membership lookup against that list —
+there is no `role >= threshold` computation, no "ADMIN inherits everything VIEWER has plus
+its own additions" logic, and no code path derives one role's permissions from another's.
+
+**Why not a real hierarchy:** for most permissions the catalog _looks_ hierarchical (OWNER
+and ADMIN hold a superset of MANAGER's grants, which is a superset of ANALYST's, which is a
+superset of VIEWER's) — but this is an emergent property of how the matrix happens to be
+authored, not a structural guarantee, and rbac.md §4's financial separation rule
+**deliberately breaks strict hierarchy on purpose**: MANAGER holds `campaign.update` but not
+`ai.execute` or any `budget.*` permission, even though both would "fit" a naive hierarchy
+below ADMIN. A true inheritance model would make it structurally awkward (or require an
+explicit "revoke" mechanism) to carve out exactly these exceptions; a flat matrix makes each
+high-risk permission an independent, auditable decision with no hierarchy to fight against.
+
+**Security consequence:** reviewing or changing what MANAGER can do never risks silently
+changing what OWNER/ADMIN can do (and vice versa) — each row of the matrix is
+self-contained. The cost is that adding a new role-supporting-permission requires touching
+every relevant permission's role list explicitly (no shortcut of "grant it to ADMIN and
+everything below automatically gets it") — an intentional friction that keeps high-risk
+grants deliberate. This is a `PERMISSION_CATALOG`-classification, not a database-schema
+concern — the `Role` Postgres enum has no ordering semantics Prisma/Postgres itself is aware
+of (`WorkspaceMembership.role` is a plain enum column, not a numeric level).
+
+**Role authority order — a separate, narrower concept from permission hierarchy**, used only
+for §8's role-assignment gating below: `OWNER > ADMIN > MANAGER > ANALYST > VIEWER`. This
+ordering exists solely to answer "who may assign which role to whom" — it does **not** imply
+that a higher-ordered role automatically holds every permission a lower-ordered role holds
+(§4/§6 above are the counter-examples). Do not conflate the two.
+
+## 8. Role Mutation, Self-Escalation Prevention, and the Owner Invariant (Phase 2.4A)
+
+Phase 2.3 implemented the mutation primitives (`changeMembershipRole()`,
+`removeMembership()`, `transferOwnership()` in `packages/domain/src/identity/
+memberships.ts`) but built no API route that exposes them yet (Phase 2.3 deliberately
+shipped no member-management endpoints). This section is the binding specification any
+future route/caller **must** enforce — Phase 2.4A does not implement it, but makes it
+unambiguous so Phase 2.4/later implementation requires no further design discussion.
+
+### 8.1 Who may assign/change/remove roles, and create/remove memberships
+
+Gated by the existing permission catalog — `members.invite`, `members.update`,
+`members.remove` are held by **OWNER and ADMIN only** (§3 above). No other role can reach
+these operations at all — this alone is the primary defense against MANAGER/ANALYST/VIEWER
+self- or other-escalation, since `requirePermission()` rejects the call before any role
+comparison logic even runs.
+
+### 8.2 The OWNER-assignment gap (identified during Phase 2.4A review — binding for Phase 2.4 implementation)
+
+**Finding:** `changeMembershipRole()`'s `newRole: Role` parameter currently accepts
+`"OWNER"` as a value with no special-casing — its only invariant check is against
+_demoting_ the workspace's last active owner, not against a _second_ concurrent owner being
+created outside the atomic `transferOwnership()` swap. If a future route called
+`changeMembershipRole({ newRole: "OWNER", ... })` directly, it would let an ADMIN (who holds
+`members.update`) unilaterally promote any member to OWNER — including themselves —
+producing a workspace with two OWNERs without any transfer/demotion ever occurring, and
+without violating the zero-owners invariant (which only checks the _low_ bound, never the
+count going up). This is not currently exploitable (no route calls this function with
+attacker-influenced input today), but it is a **latent gap that must be closed before any
+member-role-change endpoint ships**.
+
+**Binding rule for Phase 2.4 implementation:**
+
+1. `changeMembershipRole()` must reject `newRole === "OWNER"` unconditionally — assigning
+   OWNER is **exclusively** possible through `transferOwnership()`, which already requires
+   the acting membership to itself currently hold OWNER (`from.role !== "OWNER"` throws) and
+   performs the promotion/demotion as one atomic pair, never a lone promotion.
+2. The API layer must additionally enforce, before calling `changeMembershipRole()`: the
+   acting membership's role must outrank the **target** role being assigned, using §7's role
+   authority order (`OWNER > ADMIN > MANAGER > ANALYST > VIEWER`) — concretely, in practice
+   this reduces to "ADMIN may assign ADMIN/MANAGER/ANALYST/VIEWER to others" (MANAGER and
+   below hold no `members.update` permission at all, so no further role-vs-role comparison
+   is reachable by them regardless).
+3. **No membership may change its own role**, under any permission it holds — the acting
+   user's `userId` must differ from the target membership's `userId` for every call to
+   `changeMembershipRole()`/`removeMembership()`. This is a blanket self-service-escalation
+   block, simpler and safer than reasoning about whether a specific self-change would
+   "happen" to be safe.
+4. `transferOwnership()`'s `fromMembershipId` must belong to the **acting, authenticated**
+   user (an OWNER may only transfer away _their own_ ownership, never orchestrate a transfer
+   between two other members' memberships on their behalf) — already implicitly true by the
+   function's existing invariant checks, restated here as an explicit API-layer requirement.
+
+### 8.3 Owner invariant (restated, unchanged from Phase 2.3)
+
+A workspace may never end up with zero active OWNER memberships. Enforced transactionally
+with `SELECT ... FOR UPDATE` row locking (`packages/domain/src/identity/memberships.ts`) —
+see `phase-2-3-implementation-report.md` §10 for the concurrency-safety verification. Rule
+8.2's fix (rejecting `newRole === "OWNER"` in `changeMembershipRole()`) is additive to this
+invariant, not a replacement for it — both must hold simultaneously.
+
+## 9. Cross-Workspace Role Confusion (Phase 2.4A)
+
+**A user's role is a property of their `WorkspaceMembership` row, never a property of the
+user themselves.** The same Clerk-authenticated `User` may hold `OWNER` in Workspace A and
+no membership at all (or `VIEWER`) in Workspace B — nothing about their identity, their most
+recent session, or any other workspace's membership implies authority in a workspace they
+are not separately, actively a member of. `requireWorkspaceMembership()`
+(`apps/api/src/plugins/authorization.ts`) always re-resolves membership scoped to the
+specific `(userId, workspaceId)` pair on every request — it is structurally incapable of
+"remembering" a role from a different workspace, since the Prisma query itself is scoped to
+that compound key. No code path anywhere holds a bare `role` value without the
+`(userId, workspaceId)` pair it came from. See `identity-threat-model.md` threat #4
+("Workspace switching attack") and #16 (added Phase 2.4A, §"Cross-workspace role reuse") for
+the corresponding negative tests.
