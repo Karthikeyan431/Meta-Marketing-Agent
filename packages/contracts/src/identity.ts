@@ -114,3 +114,12 @@ export const inviteMemberResponseSchema = z.object({
   }),
 });
 export type InviteMemberResponse = z.infer<typeof inviteMemberResponseSchema>;
+
+/** Phase 2.6 — `GET /workspaces/:id/members`. Active members only (mirrors
+ *  `listActiveMembershipsForWorkspace()`'s existing filter, unchanged) — never a Clerk
+ *  user ID (Step 8's "do not expose internal IDs where the contract doesn't require
+ *  them," same convention as `meResponseSchema`). */
+export const listWorkspaceMembersResponseSchema = z.object({
+  members: z.array(membershipSummarySchema),
+});
+export type ListWorkspaceMembersResponse = z.infer<typeof listWorkspaceMembersResponseSchema>;

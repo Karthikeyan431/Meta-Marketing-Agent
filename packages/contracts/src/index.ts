@@ -37,6 +37,7 @@ export {
   inviteMemberRequestSchema,
   invitationStatusSchema,
   inviteMemberResponseSchema,
+  listWorkspaceMembersResponseSchema,
   type RoleContract,
   type WorkspaceStatusContract,
   type WorkspaceSummary,
@@ -53,4 +54,5 @@ export {
   type InviteMemberRequest,
   type InvitationStatusContract,
   type InviteMemberResponse,
+  type ListWorkspaceMembersResponse,
 } from "./identity.js";

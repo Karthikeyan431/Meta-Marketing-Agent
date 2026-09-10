@@ -665,4 +665,123 @@ describe("Workspace member-management API (Phase 2.5)", () => {
       ]);
     });
   });
+
+  describe("GET /workspaces/:id/members (Phase 2.6)", () => {
+    it("OWNER lists all active members", async () => {
+      const { workspace, ownerClerkUserId, owner } = await seedWorkspaceWithOwner();
+      const viewer = await addMember(workspace.id);
+      const admin = await addMember(workspace.id, "ADMIN", owner.userId);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspace.id}/members`,
+        headers: await authHeaders(ownerClerkUserId),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const ids = response
+        .json()
+        .data.members.map((m: { id: string }) => m.id)
+        .sort();
+      expect(ids).toEqual([owner.id, viewer.membership.id, admin.membership.id].sort());
+    });
+
+    it("members.read is granted to every role — a VIEWER can list members too", async () => {
+      const { workspace } = await seedWorkspaceWithOwner();
+      const viewer = await addMember(workspace.id);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspace.id}/members`,
+        headers: await authHeaders(viewer.clerkUserId),
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("no session returns 401", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${randomUUID()}/members`,
+      });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("[cross-workspace] a non-member cannot list a workspace's members", async () => {
+      const attackerClerkUserId = testClerkUserId();
+      const { workspace: victimWorkspace } = await seedWorkspaceWithOwner("Victim");
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${victimWorkspace.id}/members`,
+        headers: await authHeaders(attackerClerkUserId),
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("[W4] a suspended workspace's member list is inaccessible even to an actual member", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      await prisma.workspace.update({ where: { id: workspace.id }, data: { status: "SUSPENDED" } });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspace.id}/members`,
+        headers: await authHeaders(ownerClerkUserId),
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("[cross-workspace isolation] workspace A's list never includes workspace B's members", async () => {
+      const { workspace: workspaceA, ownerClerkUserId: ownerA } = await seedWorkspaceWithOwner("A");
+      const { workspace: workspaceB } = await seedWorkspaceWithOwner("B");
+      const memberInB = await addMember(workspaceB.id);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspaceA.id}/members`,
+        headers: await authHeaders(ownerA),
+      });
+
+      const ids = response.json().data.members.map((m: { id: string }) => m.id);
+      expect(ids).not.toContain(memberInB.membership.id);
+    });
+
+    it("a removed member does not appear in the list", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      const target = await addMember(workspace.id);
+      await prisma.workspaceMembership.update({
+        where: { id: target.membership.id },
+        data: { status: "REMOVED" },
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspace.id}/members`,
+        headers: await authHeaders(ownerClerkUserId),
+      });
+
+      const ids = response.json().data.members.map((m: { id: string }) => m.id);
+      expect(ids).not.toContain(target.membership.id);
+    });
+
+    it("no member entry exposes a Clerk user ID or any field beyond id/userId/role/status", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/workspaces/${workspace.id}/members`,
+        headers: await authHeaders(ownerClerkUserId),
+      });
+
+      const members = response.json().data.members as Record<string, unknown>[];
+      expect(members.length).toBeGreaterThan(0);
+      for (const member of members) {
+        expect(Object.keys(member).sort()).toEqual(["id", "role", "status", "userId"]);
+      }
+      expect(response.body).not.toContain("clerk_user");
+      expect(response.body).not.toContain("clerkUserId");
+    });
+  });
 });

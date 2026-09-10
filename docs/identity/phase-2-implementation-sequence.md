@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.8 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended; Phase 2.5 §4 steps 2–3 implemented, invite route implemented) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.9 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended; Phase 2.5 §4 steps 2–3 implemented, invite route implemented; Phase 2.6 member list implemented) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -57,6 +57,18 @@ Clerk's mandatory `role` parameter is fixed to `org:member` (non-authoritative, 
 `clerk-integration.md`'s existing finding that Clerk org roles are unused for this
 project's authorization) — never mapped from our RBAC. 11 new integration tests. See
 `phase-2-5-implementation-report.md` §14.
+
+**Phase 2.6 (2026-09-10, same day):** no such phase exists in the governing SDLC corpus
+either (same gap as Phase 2.5 — `IMPLEMENTATION_PHASES.md` goes directly from Phase 2 to
+Phase 3). Owner-confirmed scope, chosen from two candidates surfaced before any change:
+`GET /workspaces/:id/members` (list) — the one fully-specified, zero-ambiguity remaining
+gap in the member-management surface (`identity-api-contracts.md` §2, `members.read`
+already granted to every role). Implemented as a thin wrapper around the existing
+`listActiveMembershipsForWorkspace()`. Full workspace CRUD (`GET`/`PATCH`/`DELETE
+/workspaces/:id`) was the other candidate but was not selected — `DELETE`'s mechanism
+remains an open owner decision (does workspace deletion also deactivate the Clerk
+Organization?), untouched by this phase. 8 new integration tests. See
+`phase-2-6-implementation-report.md`.
 
 **Phase 2.4 amendment (2026-09-10, same day):** owner issued superseding decisions for
 OD-2.4A-01 (system actor identity: DEFERRED → APPROVED) and OD-2.4A-03 (`campaign.pause`

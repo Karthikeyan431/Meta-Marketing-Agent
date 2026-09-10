@@ -11,6 +11,7 @@ import {
   transferOwnershipResponseSchema,
   inviteMemberRequestSchema,
   inviteMemberResponseSchema,
+  listWorkspaceMembersResponseSchema,
   successEnvelope,
   errorEnvelope,
   type WorkspaceSummary,
@@ -19,6 +20,7 @@ import {
 import {
   getPrismaClient,
   listActiveMembershipsForUser,
+  listActiveMembershipsForWorkspace,
   findMembershipById,
   changeMembershipRole,
   removeMembership,
@@ -117,6 +119,28 @@ export default async function workspacesRoute(app: FastifyInstance, opts: Worksp
         status: workspace.status,
         role: membership.role,
       },
+    });
+    reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+  });
+
+  /**
+   * Member list (Phase 2.6, `identity-api-contracts.md` §2). `members.read` is granted to
+   * every role (`rbac-catalog.ts`), so this is a membership gate, not a role gate — any
+   * active member can see their workspace's active member list. Reuses
+   * `listActiveMembershipsForWorkspace()` unchanged (the same function reconciliation
+   * already uses) — active members only, never a Clerk user ID in the response (same
+   * convention as `meResponseSchema`).
+   */
+  app.get<{ Params: { id: string } }>("/workspaces/:id/members", async (request, reply) => {
+    const user = await requireAuth(request);
+    const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+    requirePermission(membership, "members.read");
+
+    const prisma = getPrismaClient();
+    const members = await listActiveMembershipsForWorkspace(prisma, workspace.id);
+
+    const body = listWorkspaceMembersResponseSchema.parse({
+      members: members.map((m) => toMembershipSummary(m)),
     });
     reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
   });
