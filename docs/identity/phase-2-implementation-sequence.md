@@ -35,8 +35,8 @@ carried since Phase 2.1/2.2.
 
 **Phase 2.3 (2026-09-10):** steps 3–11 (Application User, Workspace, Workspace
 Membership, Role model, Permission model, Authorization primitives, Resource-level
-authorization, Workspace-aware API protection, Clerk/application identity
-synchronization) are now done — see `phase-2-3-implementation-report.md`. Workspace
+authorization, workspace-aware API protection, and identity synchronization between
+Clerk and the application) are now done — see `phase-2-3-implementation-report.md`. Workspace
 switching (step 13) is also implemented (`POST /workspaces/:id/switch`), ahead of its
 originally-sequenced position, since it required no additional foundation beyond steps
 3–11. Tenant-isolation and security regression tests (steps 14–15) were executed
