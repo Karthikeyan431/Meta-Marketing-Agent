@@ -7,6 +7,11 @@ import {
   findMembership,
   listActiveMembershipsForUser,
   roleHasPermission,
+  MembershipNotFoundError,
+  InsufficientRoleAuthorityError,
+  SelfRoleMutationError,
+  OwnerAssignmentNotAllowedError,
+  OwnerInvariantError,
   type MembershipWithWorkspace,
   type RoleName,
   type Workspace,
@@ -184,4 +189,31 @@ export function requireResourceAccess<T extends { workspaceId: string }>(
     throw new ResourceNotFoundError();
   }
   return resource;
+}
+
+/**
+ * Maps domain-layer identity/membership errors (`packages/domain/src/identity/errors.ts`) to
+ * the HTTP error classes above (Phase 2.5, `identity-api-contracts.md`/`phase-2-4a-test-
+ * matrix.md` F5). Domain errors carry a `code` for audit/logging but no HTTP `statusCode` —
+ * every route that calls `changeMembershipRole()`/`removeMembership()`/`transferOwnership()`
+ * routes its catch block through this rather than each re-deriving the mapping. An
+ * unrecognized error is rethrown unchanged (falls through to the 500 handler) rather than
+ * silently reinterpreted — this function only ever narrows a known denial to its correct
+ * status code, never invents one for an error it doesn't recognize.
+ */
+export function mapMembershipMutationError(error: unknown): never {
+  if (error instanceof MembershipNotFoundError) {
+    throw new ResourceNotFoundError(error.message);
+  }
+  if (
+    error instanceof InsufficientRoleAuthorityError ||
+    error instanceof SelfRoleMutationError ||
+    error instanceof OwnerAssignmentNotAllowedError
+  ) {
+    throw new AuthorizationError(error.message);
+  }
+  if (error instanceof OwnerInvariantError) {
+    throw new ConflictError(error.message);
+  }
+  throw error;
 }

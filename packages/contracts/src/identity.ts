@@ -41,3 +41,49 @@ export const switchWorkspaceResponseSchema = z.object({
   workspace: workspaceSummarySchema,
 });
 export type SwitchWorkspaceResponse = z.infer<typeof switchWorkspaceResponseSchema>;
+
+/** Phase 2.5 — member-management API surface (identity-api-contracts.md §2,
+ *  phase-2-implementation-sequence.md §4). */
+export const membershipStatusSchema = z.enum(["ACTIVE", "SUSPENDED", "REMOVED"]);
+export type MembershipStatusContract = z.infer<typeof membershipStatusSchema>;
+
+/** A membership as returned to an authorized member-management caller — never leaks another
+ *  workspace's data (requireResourceAccess already confirms `:membershipId` belongs to
+ *  `:id` before this is ever built). */
+export const membershipSummarySchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  role: roleSchema,
+  status: membershipStatusSchema,
+});
+export type MembershipSummary = z.infer<typeof membershipSummarySchema>;
+
+export const changeMembershipRoleRequestSchema = z.object({
+  newRole: roleSchema,
+});
+export type ChangeMembershipRoleRequest = z.infer<typeof changeMembershipRoleRequestSchema>;
+
+export const changeMembershipRoleResponseSchema = z.object({
+  membership: membershipSummarySchema,
+});
+export type ChangeMembershipRoleResponse = z.infer<typeof changeMembershipRoleResponseSchema>;
+
+export const removeMembershipResponseSchema = z.object({
+  membership: membershipSummarySchema,
+});
+export type RemoveMembershipResponse = z.infer<typeof removeMembershipResponseSchema>;
+
+/** `toMembershipId` only — the outgoing owner (`fromMembershipId`) is always the caller's
+ *  own membership, resolved server-side from the authenticated session, never accepted as
+ *  client input (closes the "client names someone else's fromMembershipId" spoof vector
+ *  before it can even reach transferOwnership()'s own actorUserId check). */
+export const transferOwnershipRequestSchema = z.object({
+  toMembershipId: z.string(),
+});
+export type TransferOwnershipRequest = z.infer<typeof transferOwnershipRequestSchema>;
+
+export const transferOwnershipResponseSchema = z.object({
+  from: membershipSummarySchema,
+  to: membershipSummarySchema,
+});
+export type TransferOwnershipResponse = z.infer<typeof transferOwnershipResponseSchema>;

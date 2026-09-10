@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.6 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.7 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended; Phase 2.5 §4 steps 2–3 implemented) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -32,6 +32,19 @@ available and the full authentication boundary was re-verified end-to-end agains
 real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
 No code change was required. This closes the "no real Clerk application" limitation
 carried since Phase 2.1/2.2.
+
+**Phase 2.5 (2026-09-10):** No such phase exists in the governing SDLC corpus
+(`IMPLEMENTATION_PHASES.md` goes directly from Phase 2 to Phase 3 — see
+`phase-2-5-implementation-report.md` §1). Owner-confirmed scope: execute §4's remaining
+steps 2–3 (member-management API routes, ownership-transfer route), deferred during actual
+Phase 2.4 execution ("do not add broad CRUD"). Implemented `PATCH`/`DELETE
+/workspaces/:id/members/:membershipId` and `POST /workspaces/:id/ownership-transfer` as thin
+wrappers around the existing `changeMembershipRole()`/`removeMembership()`/
+`transferOwnership()` domain functions — no authorization logic duplicated. 19 new
+integration tests close all 9 `REQUIRED (Phase 2.4)` test-matrix items at the route level.
+`POST .../members/invite` remains unimplemented — blocked on an owner decision about the
+invitation mechanism (Clerk Organization Invitation API vs. an alternative); see
+`phase-2-5-implementation-report.md` §3/§13.
 
 **Phase 2.4 amendment (2026-09-10, same day):** owner issued superseding decisions for
 OD-2.4A-01 (system actor identity: DEFERRED → APPROVED) and OD-2.4A-03 (`campaign.pause`
