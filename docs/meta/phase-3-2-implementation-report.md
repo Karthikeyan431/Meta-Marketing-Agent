@@ -49,10 +49,10 @@ OAuth-specific items already re-verified in Phase 3.1, not re-checked here)
 | --- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | Ad Account fields                             | `developers.facebook.com/docs/marketing-api/reference/ad-account`                                                                                                                                                                                                    | `id` (`act_{id}`), `account_id`, `name`, `currency`, `timezone_name`, `account_status`, `business`                                                                                                    | Exact field set requested in `listAdAccounts()`                                                                                                                                                        |
 | 2   | `account_status` numeric values               | Same                                                                                                                                                                                                                                                                 | `1`=ACTIVE, `2`=DISABLED, `3`=UNSETTLED, `7`=PENDING_RISK_REVIEW, `8`=PENDING_SETTLEMENT, `9`=IN_GRACE_PERIOD, `100`=PENDING_CLOSURE, `101`=CLOSED, `201`/`202`=ANY_ACTIVE/ANY_CLOSED (filter values) | Normalized in `meta-client.ts`; any unrecognized future code maps to `UNKNOWN`, never crashes                                                                                                          |
-| 3   | Ad-account listing endpoint                   | `developers.facebook.com/docs/graph-api/reference/user/adaccounts` (the formal reference page 404'd on direct fetch — likely client-rendered; corroborated via the Marketing API's own get-started examples and community-documented usage of the identical pattern) | `GET /me/adaccounts?fields=...` — real-UAT-confirmed working exactly as documented (§12)                                                                                                              | `listAdAccounts()` calls `GET /{apiVersion}/me/adaccounts`                                                                                                                                             |
+| 3   | Ad-account listing endpoint                   | `developers.facebook.com/docs/graph-api/reference/user/adaccounts` (the formal reference page 404'd on direct fetch — likely client-rendered; corroborated via the Marketing API's own get-started examples and community-documented usage of the identical pattern) | `GET /me/adaccounts?fields=...` — real-UAT-confirmed working exactly as documented (§13)                                                                                                              | `listAdAccounts()` calls `GET /{apiVersion}/me/adaccounts`                                                                                                                                             |
 | 4   | Business listing edge                         | `developers.facebook.com/docs/graph-api/reference/user/`                                                                                                                                                                                                             | `businesses` edge — "Businesses associated with the user"                                                                                                                                             | `listBusinesses()` calls `GET /{apiVersion}/me/businesses`                                                                                                                                             |
 | 5   | Business fields                               | `developers.facebook.com/docs/marketing-api/reference/business`                                                                                                                                                                                                      | `id`, `name`, `verification_status`                                                                                                                                                                   | Exact field set requested in `listBusinesses()`                                                                                                                                                        |
-| 6   | Business-scoped account listing (alternative) | `developers.facebook.com/docs/marketing-api/business-asset-management/guides/ad-accounts`                                                                                                                                                                            | `GET /{business_id}/owned_ad_accounts` also exists                                                                                                                                                    | Not used — `/me/adaccounts` already aggregates both directly-shared and Business-owned accounts a token can access, confirmed live (§12); avoids a second, redundant traversal per discovered Business |
+| 6   | Business-scoped account listing (alternative) | `developers.facebook.com/docs/marketing-api/business-asset-management/guides/ad-accounts`                                                                                                                                                                            | `GET /{business_id}/owned_ad_accounts` also exists                                                                                                                                                    | Not used — `/me/adaccounts` already aggregates both directly-shared and Business-owned accounts a token can access, confirmed live (§13); avoids a second, redundant traversal per discovered Business |
 | 7   | Pagination                                    | `developers.facebook.com/docs/graph-api/results`                                                                                                                                                                                                                     | `paging.cursors.after/before`, `paging.next`/`previous`; "stop when `next` is absent," never rely on `count < limit`                                                                                  | `fetchAllPages()` follows `paging.next`, bounded to `MAX_DISCOVERY_PAGES = 20` (a safety bound, never a product limit)                                                                                 |
 | 8   | Required permissions                          | Already verified Phase 3.1 (`meta-permissions.md` §1, unchanged this pass)                                                                                                                                                                                           | `business_management` for Business discovery; `ads_read`/`ads_management` (+ dependencies) already requested                                                                                          | No new permission required — the existing Phase 3.1 OAuth scope already covers discovery                                                                                                               |
 | 9   | Provider errors                               | Already verified Phase 3.1 (`meta-error-model.md`, unchanged this pass)                                                                                                                                                                                              | Same normalized categories apply to discovery calls                                                                                                                                                   | Reuses `classifyMetaApiFailure()` unchanged                                                                                                                                                            |
@@ -108,7 +108,7 @@ createdAt, updatedAt
 external ID` shape (never the external ID alone as an authorization key), matching
 `meta-resource-model.md` §1-2 exactly. Re-selecting an already-`ACTIVE` account is idempotent
 (metadata refreshed); re-selecting a `DESELECTED` account reactivates the same row rather than
-creating a duplicate — real-UAT-confirmed (§12).
+creating a duplicate — real-UAT-confirmed (§13).
 
 ## 6. API
 
@@ -161,7 +161,7 @@ is touched, atomically for the whole batch.
 Every `AdAccount` lookup resolves `id` + `workspaceId` in the same query
 (`findAdAccountByWorkspace`), never `id` alone — a foreign workspace's account ID is
 indistinguishable from a nonexistent one (`404`, never `403`, matching `authorization.md` §3's
-resource-enumeration policy). Verified by both mocked integration tests and real UAT (§12):
+resource-enumeration policy). Verified by both mocked integration tests and real UAT (§13):
 Workspace B sees zero of Workspace A's selected accounts; a `DELETE` against Workspace A's
 account through Workspace B's URL returns `404` and leaves the account untouched; selecting the
 same real external ad-account ID concurrently in two different workspaces creates two fully
@@ -182,7 +182,38 @@ external ID across two workspaces → two independent rows). Full regression: **
 tests / 69 unit tests / 6 E2E tests**, all passing — zero regressions against the pre-existing
 Phase 3.1 (152) and identity/workspace (rest) suites.
 
-## 11. Security Verification
+## 11. CI-Caught Concurrency Defect (found and fixed after the first push)
+
+**What happened.** The implementation commit's first CI run failed one test:
+`[concurrency] simultaneous selection of the same new account creates exactly one row`
+(`AssertionError: expected [500, 200] to deeply equal [200, 200]`) — this test passed
+consistently in five local re-runs but genuinely raced on CI's runner, whose timing made the
+two concurrent transactions truly overlap in a way local runs did not reproduce.
+
+**Root cause.** `selectAdAccounts` originally caught only Prisma's `P2002` (unique-constraint
+violation) around the `create()` call specifically, to handle two concurrent first-time
+selections racing to create the same row. Under genuine concurrent load, Postgres/Prisma can
+instead raise **`P2034`** — "Transaction failed due to a write conflict or a deadlock" — which
+is not scoped to a single statement and is not caught by a narrow try/catch around one call
+within the transaction; it can surface at any point during, or at commit of, the interactive
+transaction. Prisma's own documented mitigation for `P2034` is to retry the whole transaction
+(confirmed via Prisma's official docs/GitHub discussion of this exact error code).
+
+**Fix.** Replaced the single-statement `P2002` catch with `withConflictRetry()` — a bounded
+(5-attempt) wrapper around the _entire_ `prisma.$transaction(...)` call, retrying on either
+`P2002` or `P2034`. Each retry re-reads `existing` fresh, so a concurrent writer that won a
+race is simply found and updated cleanly on the next attempt — no special-cased branch is
+needed for "the other request created it first" versus "the other request updated it first."
+`deselectAdAccount` was left unchanged — it is a targeted single-row update by internal ID
+with no create-path, so it has no equivalent race to guard against.
+
+**Verification.** Typecheck/lint clean; the concurrency tests re-ran 5/5 locally (this bug
+was never locally reproducible, consistent with it being a genuine timing-dependent CI
+condition, not a logic error the existing local run would have caught); the full suite
+(191 integration / 69 unit) re-ran green; pushed as a second commit, which is the CI run
+recorded in §14/§17 below.
+
+## 12. Security Verification
 
 - `pnpm audit --prod`: no known vulnerabilities.
 - `gitleaks` (working-tree diff scan): no leaks. The 5 findings in a full-history scan are
@@ -193,7 +224,7 @@ Phase 3.1 (152) and identity/workspace (rest) suites.
   persisted).
 - Lint/format/typecheck: all clean, zero warnings introduced.
 
-## 12. Real UAT
+## 13. Real UAT
 
 Performed against the real, currently-authorized Meta Development-mode connection (reconnected
 this phase after Phase 3.1's UAT had left it `DISCONNECTED` — a real, second OAuth round-trip,
@@ -216,7 +247,7 @@ audited as `connectionVersion` 2→3). Workspace `35bca089-1415-4580-8d5c-b92a4b
 | No credentials appear in UI/network responses            | Yes — every response inspected contained only safe fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Provider failures are handled safely                     | A real failure did occur (a reconnect attempt's OAuth `state` expired mid-flow during browser-automation troubleshooting, unrelated to discovery code) — the real callback correctly rejected it as `invalid_state`, audited safely, no corrupted state; discovery-specific real-UAT of a genuine Meta-side 4xx/5xx was not separately triggered live (impractical to induce safely against the real, working Development app) but is thoroughly covered by mocked integration tests (§10) using the exact same code path (`classifyMetaApiFailure`) already proven live in Phase 3.1's UAT |
 
-## 13. CI
+## 14. CI
 
 Verification suite run locally before commit: lint, format, typecheck (16/16 packages), unit
 (69/69), integration (191/191), `apps/api`/workers builds (clean), E2E (6/6), `pnpm audit`
@@ -231,7 +262,7 @@ CI run URL and commit SHA: recorded in this report's closing "record final green
 commit, per this project's established two-commit pattern (see the git history for the exact
 commits).
 
-## 14. Migrations
+## 15. Migrations
 
 One migration, `20260910170731_ad_account_discovery` — creates `ad_accounts` and the
 `AdAccountSelectionStatus` enum, adds a unique index on `(workspace_id, external_id)`, indexes
@@ -243,7 +274,7 @@ consistent with this session's standing practice around destructive operations) 
 `prisma migrate deploy` against a freshly-created Postgres service container remains the
 authoritative clean-database verification for this migration too.
 
-## 15. Files Changed
+## 16. Files Changed
 
 - `packages/domain/prisma/schema.prisma` — `AdAccount` model, `AdAccountSelectionStatus` enum,
   `Workspace.adAccounts`/`MetaConnection.adAccounts` relations.
@@ -263,13 +294,13 @@ authoritative clean-database verification for this migration too.
 
 No unrelated files changed.
 
-## 16. Commit SHA
+## 17. Commit SHA
 
 Recorded in the closing "record final green CI run" commit (see git history) — the
 implementation commit's own SHA and this report's final CI run URL are both filled in there,
 matching Phase 3.1's established two-commit pattern.
 
-## 17. Known Limitations
+## 18. Known Limitations
 
 - **OD-3A-08's workspace-level Meta connection kill switch remains outstanding** (§1) — not
   built by this phase, must land before any future phase enables production mutation
@@ -287,7 +318,7 @@ matching Phase 3.1's established two-commit pattern.
   budget changes, AI Meta tools, or autonomous optimization — all explicitly out of this
   phase's scope (Phase 4/5/AI-tool-phase).
 
-## 18. Phase 4 Readiness
+## 19. Phase 4 Readiness
 
 Phase 4.1 (Campaign/Ad Set/Ad Synchronization) can build directly on the `AdAccount` model
 (its `id` is the stable internal reference every synced Campaign row will carry as a parent
@@ -296,14 +327,15 @@ built before Phase 4 enables any mutation capability, per its own binding decisi
 is a recommendation for whichever phase first introduces mutation, not a hard gate on Phase
 4.1's read-only sync work specifically.
 
-## 19. Final Gate Status
+## 20. Final Gate Status
 
 **Implementation: complete.** **Tests: 191 integration + 69 unit + 6 E2E, all passing, zero
-regressions.** **Real Meta UAT: complete and verified** (§12). **CI: green** (§13, SHAs
-recorded in the closing commit). **Migrations: clean, CI-verified from a fresh database**
-(§14). **Docs: updated** (`meta-account-discovery.md`, `meta-resource-model.md`,
-`meta-adapter-contract.md`, `meta-api-contracts.md`, `meta-test-matrix.md`,
-`phase-3-implementation-sequence.md`, this report). **Git: clean** — no unrelated files
-changed, no credential committed. **One explicit, owner-acknowledged carry-forward item**:
-OD-3A-08's kill switch (§17). Phase 3.2 (Business & Ad Account Discovery) is **APPROVED FOR
+regressions.** **Real Meta UAT: complete and verified** (§13). **CI: green** (§14, SHAs
+recorded in the closing commit — after one real concurrency defect was found and fixed,
+§11). **Migrations: clean, CI-verified from a fresh database** (§15). **Docs: updated**
+(`meta-account-discovery.md`, `meta-resource-model.md`, `meta-adapter-contract.md`,
+`meta-api-contracts.md`, `meta-test-matrix.md`, `phase-3-implementation-sequence.md`, this
+report). **Git: clean** — no unrelated files changed, no credential committed. **One
+explicit, owner-acknowledged carry-forward item**: OD-3A-08's kill switch (§18). Phase 3.2
+(Business & Ad Account Discovery) is **APPROVED FOR
 CLOSURE**. Per this task's explicit instruction, **Phase 4 is not started**.

@@ -2,10 +2,35 @@ import { Prisma, type PrismaClient, type AdAccount } from "@prisma/client";
 import { recordAuditEvent } from "../identity/audit.js";
 import { AdAccountNotFoundError, AdAccountNotDiscoverableError } from "./errors.js";
 
-/** True for Prisma's unique-constraint-violation error (P2002) — the concurrency guard for
- *  two simultaneous first-time selections of the same external account racing each other. */
-function isUniqueConstraintViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+/** True for a Prisma error a concurrent-transaction retry can resolve: `P2002` (unique-
+ *  constraint violation — two simultaneous first-time selections of the same external
+ *  account racing each other) or `P2034` (write conflict/deadlock — Postgres's own
+ *  serialization-failure signal, which can surface at any point during or at commit of an
+ *  interactive transaction, not only at the exact statement that logically raced). Retrying
+ *  the whole transaction, not just one statement, is required because a `P2034` is not
+ *  necessarily attributable to a single call within the transaction callback. */
+function isRetryableConflict(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P2002" || error.code === "P2034")
+  );
+}
+
+/** Retries an entire transaction attempt on a concurrency conflict (see
+ *  `isRetryableConflict`) — each retry re-reads state fresh, so it naturally converges once
+ *  the other concurrent writer has committed, rather than assuming which specific statement
+ *  raced. Bounded so a genuine, non-transient failure still surfaces. */
+async function withConflictRetry<T>(attempt: () => Promise<T>, maxAttempts = 5): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!isRetryableConflict(error)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -82,72 +107,62 @@ export async function selectAdAccounts(
     throw new AdAccountNotDiscoverableError(missing);
   }
 
-  return prisma.$transaction(async (tx) => {
-    const results: AdAccount[] = [];
+  return withConflictRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const results: AdAccount[] = [];
 
-    for (const externalId of input.requestedExternalIds) {
-      const account = discoveredById.get(externalId)!;
-      const existing = await tx.adAccount.findUnique({
-        where: { workspaceId_externalId: { workspaceId: input.workspaceId, externalId } },
-      });
-
-      const updateData = {
-        metaConnectionId: input.metaConnectionId,
-        name: account.name,
-        currency: account.currency,
-        timezone: account.timezone,
-        accountStatus: account.accountStatus,
-        businessExternalId: account.businessExternalId,
-        businessName: account.businessName,
-        status: "ACTIVE" as const,
-        deselectedAt: null,
-      };
-
-      let row: AdAccount;
-      if (existing) {
-        row = await tx.adAccount.update({
-          where: { id: existing.id },
-          data: {
-            ...updateData,
-            ...(existing.status === "DESELECTED" ? { selectedAt: new Date() } : {}),
-          },
+      for (const externalId of input.requestedExternalIds) {
+        const account = discoveredById.get(externalId)!;
+        const existing = await tx.adAccount.findUnique({
+          where: { workspaceId_externalId: { workspaceId: input.workspaceId, externalId } },
         });
-      } else {
-        try {
-          row = await tx.adAccount.create({
-            data: { workspaceId: input.workspaceId, externalId, ...updateData },
-          });
-        } catch (error) {
-          // A concurrent request won the race and created this row first (unique constraint
-          // on workspaceId+externalId) — converge to updating that row rather than erroring,
-          // so neither concurrent caller sees a spurious failure (test-matrix "Concurrency:
-          // simultaneous selection of same account").
-          if (!isUniqueConstraintViolation(error)) throw error;
-          const winner = await tx.adAccount.findUniqueOrThrow({
-            where: { workspaceId_externalId: { workspaceId: input.workspaceId, externalId } },
-          });
-          row = await tx.adAccount.update({ where: { id: winner.id }, data: updateData });
-        }
+
+        const updateData = {
+          metaConnectionId: input.metaConnectionId,
+          name: account.name,
+          currency: account.currency,
+          timezone: account.timezone,
+          accountStatus: account.accountStatus,
+          businessExternalId: account.businessExternalId,
+          businessName: account.businessName,
+          status: "ACTIVE" as const,
+          deselectedAt: null,
+        };
+
+        // Re-reading `existing` fresh at the top of every attempt (including retries — see
+        // `withConflictRetry`) means a concurrent request that won the create-race is simply
+        // found as `existing` on retry and updated cleanly, with no special-cased catch here.
+        const row = existing
+          ? await tx.adAccount.update({
+              where: { id: existing.id },
+              data: {
+                ...updateData,
+                ...(existing.status === "DESELECTED" ? { selectedAt: new Date() } : {}),
+              },
+            })
+          : await tx.adAccount.create({
+              data: { workspaceId: input.workspaceId, externalId, ...updateData },
+            });
+
+        await recordAuditEvent(tx, {
+          workspaceId: input.workspaceId,
+          actorType: "USER",
+          actorId: input.actorUserId,
+          eventType: "ad_account.selected",
+          resourceType: "ad_account",
+          resourceId: row.id,
+          action: "select",
+          outcome: "SUCCESS",
+          correlationId: input.correlationId ?? null,
+          metadata: { externalId },
+        });
+
+        results.push(row);
       }
 
-      await recordAuditEvent(tx, {
-        workspaceId: input.workspaceId,
-        actorType: "USER",
-        actorId: input.actorUserId,
-        eventType: "ad_account.selected",
-        resourceType: "ad_account",
-        resourceId: row.id,
-        action: "select",
-        outcome: "SUCCESS",
-        correlationId: input.correlationId ?? null,
-        metadata: { externalId },
-      });
-
-      results.push(row);
-    }
-
-    return results;
-  });
+      return results;
+    }),
+  );
 }
 
 export interface DeselectAdAccountInput {
