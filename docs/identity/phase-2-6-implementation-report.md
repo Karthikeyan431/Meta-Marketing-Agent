@@ -129,12 +129,15 @@ exposes a Clerk user ID or any extra field.
 
 ## 8. CI Run and URL
 
-Pending — recorded in the follow-up commit once verified, per the established two-commit
-pattern for this project.
+**Green.** Run `34473382807` — `completed` / `success`, every stage passed (install, lint,
+format check, typecheck, migrations, RBAC seed, unit tests, integration tests, build, web
+production build, E2E tests, secret scan, dependency vulnerability scan):
+https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34473382807
 
 ## 9. Commit SHA
 
-Recorded in the follow-up commit.
+`20f51cc8ebf8f99465da20c4722c6f9a94a9aca4` — implementation, pushed to `origin/main`
+(`0fbea0b..20f51cc`), CI-verified green above.
 
 ## 10. Known Limitations
 
@@ -152,19 +155,19 @@ workspace CRUD.
 
 ## 12. Phase 2.6 Gate Status
 
-| Item                                                          | Status                         |
-| ------------------------------------------------------------- | ------------------------------ |
-| Phase 2.6 scope confirmed with owner (no corpus spec existed) | PASS                           |
-| `GET /workspaces/:id/members` implemented                     | PASS                           |
-| Existing authorization primitives reused, none duplicated     | PASS                           |
-| Fail-closed behavior preserved                                | PASS                           |
-| No later-phase or unrelated functionality implemented         | PASS                           |
-| No schema change / no migration                               | PASS                           |
-| Full regression suite green (117/117 integration, 62/62 unit) | PASS                           |
-| Lint/format/typecheck/builds/E2E/audit/migration-status clean | PASS                           |
-| No unrelated changes                                          | PASS                           |
-| Documentation updated                                         | PASS                           |
-| CI green                                                      | Pending — see follow-up commit |
+| Item                                                          | Status                 |
+| ------------------------------------------------------------- | ---------------------- |
+| Phase 2.6 scope confirmed with owner (no corpus spec existed) | PASS                   |
+| `GET /workspaces/:id/members` implemented                     | PASS                   |
+| Existing authorization primitives reused, none duplicated     | PASS                   |
+| Fail-closed behavior preserved                                | PASS                   |
+| No later-phase or unrelated functionality implemented         | PASS                   |
+| No schema change / no migration                               | PASS                   |
+| Full regression suite green (117/117 integration, 62/62 unit) | PASS                   |
+| Lint/format/typecheck/builds/E2E/audit/migration-status clean | PASS                   |
+| No unrelated changes                                          | PASS                   |
+| Documentation updated                                         | PASS                   |
+| CI green                                                      | PASS — run 34473382807 |
 
 ## 13. Exact Next Phase Readiness
 
