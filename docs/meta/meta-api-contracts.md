@@ -1,0 +1,84 @@
+# Meta API Contracts
+
+**Document ID:** META-116 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+
+Consolidates the governing task's illustrative endpoint list against the pre-existing
+`ai-marketing-manager-gate-7-api-docs/docs/08-api/API_ENDPOINT_CATALOG.md` (API-002)'s
+already-drafted Meta section and `AUTHORIZATION_MODEL.md` (API-006). **No route is
+implemented by this document.**
+
+## 1. Endpoint Surface (reconciled)
+
+API-002 (Gate 7, already exists) specifies a **workspace-nested** shape for
+connection-management endpoints; the governing task's own illustrative list uses a flatter
+shape (`POST /meta/connections/{id}/reconnect`, `DELETE /meta/connections/{id}`). The
+workspace-nested form is recommended and adopted here, because it is consistent with every
+mutating route already shipped in this codebase (`PATCH/DELETE /workspaces/:id/members/
+:membershipId`, `POST /workspaces/:id/ownership-transfer`, `POST /workspaces/:id/members/
+invite` — every one of them resolves `:workspaceId` first, then the target resource scoped to
+it) — a flat `/meta/connections/:id` route would require re-deriving the workspace from the
+connection row rather than the other way around, inverting this project's established
+authorization-resolution order for no benefit.
+
+```
+POST   /workspaces/:id/meta/connect
+GET    /workspaces/:id/meta/connections
+GET    /meta/oauth/callback                                    (no requireAuth chain — see meta-oauth.md §2)
+POST   /workspaces/:id/meta/connections/:connectionId/reconnect
+DELETE /workspaces/:id/meta/connections/:connectionId
+POST   /workspaces/:id/meta/sync
+GET    /workspaces/:id/ad-accounts
+GET    /workspaces/:id/ad-accounts/:adAccountId
+GET    /webhooks/meta                                          (verification handshake)
+POST   /webhooks/meta                                           (event delivery — meta-webhooks.md)
+```
+
+**Known pre-existing discrepancy, flagged, not resolved by this phase**: API-002 prefixes its
+whole catalog with `/api/v1`; this project's actually-implemented routes
+(`apps/api/src/routes/*`) do not use any version prefix. This is a pre-existing inconsistency
+between Gate 7's draft catalog and shipped practice, unrelated to Meta specifically — Phase
+3.1 should follow the already-shipped, unprefixed convention (consistent with
+`identity-api-contracts.md`'s own already-implemented routes), not introduce a new `/api/v1`
+prefix solely for Meta endpoints.
+
+## 2. Authorization Chain (per endpoint, extending `AUTHORIZATION_MODEL.md` (API-006)'s
+
+already-specified chain — reuses the exact primitives shipped in `apps/api/src/plugins/
+authorization.ts`, no new primitive)
+
+| Endpoint                                                        | Chain                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /workspaces/:id/meta/connect`                             | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.connect)` → issues OAuth state (`meta-oauth.md`)                                                                                                                                                        |
+| `GET /workspaces/:id/meta/connections`                          | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)`                                                                                                                                                                                                  |
+| `GET /meta/oauth/callback`                                      | No `requireAuth()` — authenticated by state validation instead (`meta-oauth.md` §3), identical exception pattern to `POST /webhooks/clerk`                                                                                                                                            |
+| `POST /workspaces/:id/meta/connections/:connectionId/reconnect` | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.reconnect) → requireResourceAccess(connectionId, workspace.id)`                                                                                                                                         |
+| `DELETE /workspaces/:id/meta/connections/:connectionId`         | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.disconnect) → requireResourceAccess(connectionId, workspace.id)`                                                                                                                                        |
+| `POST /workspaces/:id/meta/sync`                                | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)` (triggering a sync is a read-adjacent operation on already-authorized data, not a Meta-side mutation — consistent with `meta_connection.read`'s existing "worker-invocable: yes" classification) |
+| `GET /workspaces/:id/ad-accounts[/{id}]`                        | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read) → requireResourceAccess` (for the single-resource form)                                                                                                                                           |
+| `GET`/`POST /webhooks/meta`                                     | No `requireAuth()` — authenticated by Meta's own signature (`meta-webhooks.md` §1–2), identical exception pattern to `POST /webhooks/clerk`                                                                                                                                           |
+
+Every endpoint above reuses `apps/api/src/plugins/authorization.ts`'s already-shipped
+`requireAuth`, `requireWorkspaceMembership`, `requirePermission`, `requireResourceAccess` —
+**no competing authorization path is introduced.** Per the governing task's explicit
+instruction: client-supplied `workspaceId`, `connectionId`, ad-account/campaign/ad-set/ad IDs
+are never trusted directly — every one resolves through the same server-side, already-
+authorized chain, exactly as every existing route in this codebase already does.
+
+## 3. Error Envelope (unchanged, no new convention)
+
+Every Meta endpoint uses the existing `{data, meta}` / `{error: {code, message, requestId}}`
+envelope (`packages/contracts/src/envelope.ts`, already shipped). `meta-error-model.md` §1's
+categories map onto the existing `ErrorCode` enum (`AUTHENTICATION_ERROR`,
+`AUTHORIZATION_ERROR`, `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`,
+`PROVIDER_UNAVAILABLE`, `INTERNAL_ERROR`) — `PROVIDER_UNAVAILABLE` (already defined, currently
+unused by any shipped route) is the natural home for `TRANSIENT_PROVIDER_FAILURE`/`TIMEOUT`/
+`UNKNOWN_PROVIDER_FAILURE`. No new error code is required.
+
+## 4. What This Document Does Not Define
+
+Field-level request/response JSON shapes, pagination parameters for `GET /workspaces/:id/
+ad-accounts`, and the final locked OpenAPI contract remain Phase 5/API-gate scope, per
+`identity-api-contracts.md` §4's already-established precedent for exactly this kind of
+deferral (that document used identical wording for the identity API surface, and Phase
+2.5/2.6 implementation reconciled cleanly against it without rework) — this document
+establishes only the authorization chain and endpoint surface, not the full contract.
