@@ -419,11 +419,28 @@ codebase's actual state):**
   §8.2). No code change was made here; this interpretation is stated explicitly so the owner
   can object if the literal unconditional ban was actually intended.
 
-**Regression:** full existing Phase 2.4 test suite re-run unchanged (135/135 passing) — see
-§15's addendum run in §16 amendment note below for the exact command output this pass.
+**Verification performed for this amendment:** `pnpm run lint` (clean), `pnpm run format`
+(clean after `--write`), `pnpm run typecheck` (clean, all 15 packages), `pnpm run test:unit`
+(62/62 — 56 prior + 6 new `system-actor.test.ts`), `pnpm run test:integration` (79/79,
+unchanged — no integration surface touched), `apps/api` + all 6 worker builds (clean `tsc`),
+`apps/web` `next build` (compiles/typechecks/generates all pages; its standalone-output
+trace-copy step hits the same pre-existing Windows-only `EPERM`/symlink limitation recorded
+in `phase-2-3-implementation-report.md` §19 — not reproducible on CI's Ubuntu runner, which
+remains authoritative), `pnpm run test:e2e` (6/6, unaffected), `pnpm audit --audit-level=high`
+(exit 0, the same 2 pre-existing moderate advisories, unchanged), `prisma migrate status`
+("Database schema is up to date!" — no migration, per Hard Restrictions), `gitleaks` 8.24.3
+(CI-pinned version) against the staged diff before commit — no leaks found.
+
+**Regression:** full existing Phase 2.4 test suite re-run unchanged (135/135 passing
+pre-amendment + 6 new = 141/141 total).
 
 **Security impact:** none of this amendment weakens any existing check — `changeMembershipRole`,
 `removeMembership`, `transferOwnership`, `requirePermission`, and `requireResourceAccess` are
 byte-for-byte unchanged. The new code is additive and inert (no caller) until a future phase
 wires it up, at which point `assertSystemActorProvisioned()`'s fail-closed check is the
 enforcement point OD-2.4A-01 required ("do not bypass the authorization chain").
+
+**Commit:** `52f5c679316d949c13268637f79a072955f530e1` — pushed to `origin/main`; see the
+project's git history for CI result (this report is not re-edited a second time solely to
+record the CI URL, per the established two-commit pattern — if CI requires a fix, a
+follow-up commit and note will be added here).
