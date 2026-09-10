@@ -197,7 +197,10 @@ remains an explicit prerequisite for Phase 3.2 sign-off, not performed in this r
 
 ## 16. CI Result and Run URL
 
-Recorded in the follow-up commit once verified, per the established two-commit pattern.
+**Green.** Run `34483974408` — `completed` / `success`, every stage passed, including the
+clean-database migration verification (`prisma migrate deploy` against a freshly-created
+Postgres service container — the authoritative clean-DB check referenced in §18):
+https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34483974408
 
 ## 17. Files Changed
 
