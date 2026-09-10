@@ -349,7 +349,7 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       return new URL(response.json().data.authorizationUrl).searchParams.get("state")!;
     }
 
-    it("[valid state] successful callback creates a connection and redirects to success", async () => {
+    it("[valid state] successful callback creates a connection and redirects to success — no Authorization header sent, matching a real browser's top-level redirect", async () => {
       const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
       const state = await initiate(workspace.id, ownerClerkUserId);
       queueSuccessfulMetaFlow(fetchMock);
@@ -357,7 +357,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.statusCode).toBe(302);
@@ -367,6 +366,25 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       });
       expect(connection?.status).toBe("CONNECTED");
       expect(connection?.externalUserId).toBe("meta_ext_user_123");
+    });
+
+    it("[no requireAuth chain] an Authorization header — present, absent, or for a different user — never affects the outcome; only the state payload's bound identity does", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      const state = await initiate(workspace.id, ownerClerkUserId);
+      const otherClerkUserId = testClerkUserId();
+      queueSuccessfulMetaFlow(fetchMock);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/meta/oauth/callback?state=${state}&code=real-code`,
+        headers: await authHeaders(otherClerkUserId),
+      });
+
+      expect(response.headers.location).toContain("status=success");
+      const connection = await prisma.metaConnection.findUnique({
+        where: { workspaceId: workspace.id },
+      });
+      expect(connection?.status).toBe("CONNECTED");
     });
 
     it("[missing state] rejected without calling Meta", async () => {
@@ -390,11 +408,9 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
     });
 
     it("[invalid state] an unknown state token is rejected", async () => {
-      const { ownerClerkUserId } = await seedWorkspaceWithOwner();
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${randomUUID()}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toContain("reason=invalid_state");
@@ -408,14 +424,12 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const first = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
       expect(first.headers.location).toContain("status=success");
 
       const replay = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
       expect(replay.headers.location).toContain("reason=invalid_state");
     });
@@ -430,28 +444,8 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
       expect(response.headers.location).toContain("reason=invalid_state");
-    });
-
-    it("[wrong user] a callback completed by a different authenticated user than initiated it is rejected", async () => {
-      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
-      const state = await initiate(workspace.id, ownerClerkUserId);
-      const otherClerkUserId = testClerkUserId();
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(otherClerkUserId),
-      });
-
-      expect(response.headers.location).toContain("reason=wrong_user");
-      const connection = await prisma.metaConnection.findUnique({
-        where: { workspaceId: workspace.id },
-      });
-      expect(connection).toBeNull();
-      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("[wrong workspace] a membership removed between initiation and callback is rejected", async () => {
@@ -468,7 +462,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(admin.clerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=wrong_workspace");
@@ -493,7 +486,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=invalid-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=token_exchange_failed");
@@ -516,7 +508,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=token_validation_failed");
@@ -539,7 +530,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=insufficient_permission");
@@ -555,7 +545,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=token_exchange_failed");
@@ -571,7 +560,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.headers.location).toContain("reason=token_exchange_failed");
@@ -585,7 +573,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       const response = await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       expect(response.statusCode).toBe(302);
@@ -600,7 +587,6 @@ describe("Meta OAuth & connection lifecycle API (Phase 3.1)", () => {
       await app.inject({
         method: "GET",
         url: `/meta/oauth/callback?state=${state}&code=real-code`,
-        headers: await authHeaders(ownerClerkUserId),
       });
 
       const events = await prisma.auditEvent.findMany({ where: { workspaceId: workspace.id } });

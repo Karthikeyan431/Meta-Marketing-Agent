@@ -1,6 +1,6 @@
 # Phase 3.1 Implementation Report — Meta OAuth & Connection
 
-**Document ID:** META-122 | Version 1.0 | Status: Complete | Phase: 3.1 (Implementation)
+**Document ID:** META-122 | Version 1.1 | Status: Complete, real Meta UAT verified 2026-09-10 | Phase: 3.1 (Implementation)
 
 ## 1. Baseline
 
@@ -181,28 +181,116 @@ surface via `app.inject()`, plus 7 new unit tests for the encryption utility
 
 ## 15. Real Meta UAT
 
-**BLOCKED — no Meta Developer App exists yet.** Confirmed by direct inspection before this
-phase began: no `META_APP_ID`/`META_APP_SECRET` anywhere in `.env`, `.env.example`, or any
-prior implementation report; `.env`'s own comment explicitly states Meta variables are "out of
-scope until Phase 3." Creating a Meta Developer App is interactive account/app creation,
-which — per this project's standing operating constraint, reiterated throughout every prior
-phase of this project — must be performed by the human, not by me. The owner has confirmed
-they will create a Development-mode Meta app and provide `META_APP_ID`/`META_APP_SECRET`/a
-registered redirect URI. Once provided, per this phase's own re-verification (#15–17 above),
-real UAT does **not** require App Review or Business Verification first — Development mode
-with the app's own admin/tester role is sufficient, since "all features are active for test
-users while your app is in Development mode" and Business Verification is explicitly not
-required for users with a role on the app itself. Real UAT (Step 14's 11-point checklist)
-remains an explicit prerequisite for Phase 3.2 sign-off, not performed in this report.
+**COMPLETE — verified 2026-09-10 against a real Meta Development-mode app.** The owner created
+a Meta Developer App and supplied `META_APP_ID`/`META_APP_SECRET` via the local `.env` (never
+printed, logged, committed, or included below — see §16 for the credential-safety record).
+`META_OAUTH_REDIRECT_URI=http://localhost:4000/meta/oauth/callback` (owner-confirmed, matching
+the app's registered redirect) and a freshly-generated `META_CREDENTIAL_ENCRYPTION_KEY` were
+added to `.env` — the latter generated locally rather than by the owner, since it is an
+internal application secret (the AES-256-GCM key protecting stored tokens), not an external
+Meta credential requiring account-holder action.
 
-## 16. CI Result and Run URL
+A real OAuth round-trip was performed end-to-end using the actual project owner's own,
+already-authenticated Facebook session (workspace `35bca089-1415-4580-8d5c-b92a4ba16d49`,
+"Phase 2.3 UAT Workspace", real Clerk user, referenced only by its anonymized userId per this
+project's PII-avoidance rule): `POST .../meta/connect` → real Meta authorization dialog
+("Continue as [account]?", no password entry — an existing Facebook session, matching this
+project's rule against interactive credential entry) → real callback → **CONNECTED**. All of
+Step 7's checklist items were then verified directly against this real connection (not mocks):
 
-**Green.** Run `34483974408` — `completed` / `success`, every stage passed, including the
-clean-database migration verification (`prisma migrate deploy` against a freshly-created
-Postgres service container — the authoritative clean-DB check referenced in §18):
+| Item                                                                       | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authorization-code exchange succeeded                                      | Yes — real short-lived → long-lived token exchange, both real Meta calls (302 in ~3.7s, real network latency).                                                                                                                                                                                                                                                                                                                                                                   |
+| Credentials encrypted before persistence                                   | Yes — `credentialCiphertext`/`credentialIv`/`credentialAuthTag` populated (AES-256-GCM); never queried/printed raw.                                                                                                                                                                                                                                                                                                                                                              |
+| Credentials never returned in API responses                                | Yes — `GET .../meta/connections` response schema excludes all credential fields (confirmed on the real connection).                                                                                                                                                                                                                                                                                                                                                              |
+| Credentials never logged                                                   | Yes — API request/response logs contain no token or secret material (grep-verified).                                                                                                                                                                                                                                                                                                                                                                                             |
+| Connection reached `CONNECTED`                                             | Yes, with a real `externalUserId` from Meta's `/me`.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Connection associated with the correct workspace                           | Yes — `workspaceId` matches the initiating workspace exactly.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Reconnect works without creating a second connection                       | Yes — a second real OAuth round-trip via `POST .../reconnect` (Meta skipped the consent screen, already authorized) updated the same row in place: `connectionVersion` 1→2, same `id`, same `createdAt`.                                                                                                                                                                                                                                                                         |
+| Disconnect nulls credential material                                       | Yes — real `DELETE`, `status` → `DISCONNECTED`, all three credential columns → `null`; row and its audit history preserved (not deleted), matching BR-018.                                                                                                                                                                                                                                                                                                                       |
+| Audit events generated correctly                                           | Yes — real trail: `oauth_started` → `connected` → `oauth_started` (reconnect) → `reconnected` → `oauth_failed` (real failure test, below) → `disconnected`. No event's `metadata` ever contains raw token material (grep-verified against the real access token value — never found).                                                                                                                                                                                            |
+| Tenant isolation                                                           | Yes — the same real owner's second workspace (`3651db79-...`, "Phase 2.4 UAT Second Workspace") returns zero connections for `GET .../meta/connections` despite shared ownership.                                                                                                                                                                                                                                                                                                |
+| Real Meta API reachability                                                 | Yes — real `debug_token` and `/me` calls both succeeded against `graph.facebook.com`.                                                                                                                                                                                                                                                                                                                                                                                            |
+| Realistic real provider/failure scenario, no leaked error body/credentials | Yes — a fresh real state was obtained via `POST .../reconnect`, then the callback was hit directly with a deliberately invalid `code` (bypassing the Meta dialog, which had already been proven reachable). Meta's real token endpoint rejected it; the callback classified this as `token_exchange_failed:invalid_parameter` and redirected safely — no raw Meta error body, and the existing healthy connection was left completely untouched (`connectionVersion` unchanged). |
+
+**A real, genuine implementation defect was found and fixed during this UAT** — see §16.
+
+## 16. OAuth Callback Authentication Fix (found and fixed during real UAT)
+
+**Root cause.** `GET /meta/oauth/callback` (`apps/api/src/routes/meta.ts`) called
+`requireAuth(request)`, comparing the currently-authenticated user against the OAuth state's
+stored `userId` and treating a failure as `session_expired`/`wrong_user`. This directly
+contradicted the already-approved architecture (`docs/meta/meta-oauth.md` §2: "Callback (GET
+/meta/oauth/callback — no requireAuth() chain, authenticated by state instead, same pattern as
+the already-shipped POST /webhooks/clerk..."); `docs/meta/meta-api-contracts.md`'s
+authorization-chain table states the same thing explicitly. The defect was invisible to the
+existing 35-test automated suite because every callback test drove the route via
+`app.inject()`, which can attach an arbitrary `Authorization` header to a synthetic `GET`
+request — something a real browser's top-level redirect from Meta's server can never do.
+Real UAT's first real attempt failed with `reason=session_expired` (audited as
+`unauthenticated_at_callback` at `2026-09-10T14:49:26.525Z`), reproducing the defect for real,
+not hypothetically.
+
+**Fix (minimum necessary, per this task's Step 14).** Removed the `requireAuth()` call and its
+`wrong_user`/`session_expired` branches from the callback. The state payload's own `userId`/
+`workspaceId` — set at issuance time by the already-authenticated, already-authorized
+`POST .../meta/connect` (or `.../reconnect`) call, and only ever obtainable by consuming a
+single-use, short-TTL, unpredictable state value — is now used directly for the fresh
+membership/permission re-check (ADR-028's "never trust a prior check, re-derive fresh" is
+preserved: the check still re-queries the database for the _current_ membership/permission
+state, it now simply doesn't require a nonexistent request-time identity to compare against).
+This is a correction back to the already-approved design, not a new security decision.
+
+**Blast radius.** Two files: `apps/api/src/routes/meta.ts` (the route) and
+`tests/integration/api-meta.test.ts` (test updates: removed the now-invalid "[wrong user]"
+test premise, added a test proving the callback succeeds regardless of any Authorization
+header — present, absent, or for a different user — since only the state payload's bound
+identity matters; removed `authHeaders(...)` from the other callback tests, since a real
+browser redirect never sends one). No schema, migration, contract, or other route changed.
+
+**Verification.** All 35 Meta integration tests pass (same count — one test replaced, one
+added); full integration suite 152/152 passes; unit suite 69/69 passes; lint, format, and
+typecheck all clean; `apps/api` build (`tsc -p tsconfig.build.json`) clean; Playwright E2E
+6/6 passes; `pnpm audit --prod` reports no known vulnerabilities; a `gitleaks` scan of the
+current working-tree diff finds no leaks (the 5 findings in the full-history scan are
+pre-existing, already-documented false positives from Phase 2.1/2.2, untouched by this
+change). Then the real OAuth flow was re-run end-to-end and succeeded (§15's table).
+
+**Known pre-existing, unrelated limitation:** `pnpm run build` fails only for `apps/web`, with
+a Windows-only `EPERM: symlink` error during Next.js's standalone-output file-tracing step
+(`apps/web` was not touched by this fix; its own compilation and type-checking succeed —
+`✓ Compiled successfully`, `✓ Generating static pages (5/5)` — only the post-build symlink
+step fails, a well-known Windows requirement for Developer Mode/elevated privileges to create
+symlinks). CI runs on Linux, where this does not occur; this local-only limitation does not
+block this report's sign-off, consistent with how §18 already treats CI as the authoritative
+clean-database check for the same Windows-local-tooling reason.
+
+## 17. Credential Safety Record
+
+Per this task's explicit "Credential safety" rules: the real `META_APP_SECRET` and the real
+long-lived Meta access token were used only server-side (token exchange, `debug_token`, `/me`)
+and never printed, logged, committed, or included in any test snapshot or this report. Every
+verification query above used boolean/shape checks (`hasCred: !!row.credentialCiphertext`,
+`status`, `connectionVersion`, scope lists) rather than reading credential column values. No
+OAuth authorization URL containing the real `client_id` was committed to any tracked file —
+values were inspected via `URL.searchParams.get(...)` field-by-field in an ephemeral browser
+JS context, never logged in full. `.env` was not committed (`git status`/`git diff --stat`
+confirm no change to any tracked file other than `apps/api/src/routes/meta.ts` and
+`tests/integration/api-meta.test.ts`); `.env.example` was not modified.
+
+## 18. CI Result and Run URL
+
+**Green (pre-UAT implementation commit).** Run `34483974408` — `completed` / `success`, every
+stage passed, including the clean-database migration verification (`prisma migrate deploy`
+against a freshly-created Postgres service container — the authoritative clean-DB check
+referenced in §20):
 https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34483974408
 
-## 17. Files Changed
+This UAT phase's own fix (§16) is committed separately; see this report's closing commit for
+its own CI run, recorded in a follow-up "docs: record final green CI run" commit per this
+project's established two-commit pattern.
+
+## 19. Files Changed
 
 - `packages/domain/prisma/schema.prisma` — `MetaConnection` model, `MetaConnectionStatus`
   enum, `Workspace.metaConnection` relation.
@@ -222,7 +310,7 @@ https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34483974408
 
 No unrelated files changed (diff-stat verified against pre-phase HEAD).
 
-## 18. Migration
+## 20. Migration
 
 One migration, `20260910132104_meta_connection` — creates `meta_connections` (all credential
 columns nullable, per §6) and the `MetaConnectionStatus` enum, adds a unique index on
@@ -235,11 +323,12 @@ practice around destructive actions, I did not override that guard or ask for ap
 run it locally when an equivalent, non-destructive verification already happens
 automatically). **CI's migration step applies every migration via `prisma migrate deploy`
 against a freshly-created Postgres service container on every run — this is the authoritative
-clean-database verification for this migration**, confirmed green in §16.
+clean-database verification for this migration**, confirmed green in §18.
 
-## 19. Known Limitations
+## 21. Known Limitations
 
-- Real Meta UAT is blocked pending owner-provided Development-mode credentials (§15).
+- `pnpm run build` fails for `apps/web` only, with a pre-existing, Windows-local-only `EPERM`
+  symlink error unrelated to this phase's changes (§16's addendum).
 - Encryption is application-layer AES-256-GCM with an env-var key, not a managed KMS
   (AWS Secrets Manager, ADR-006) — a documented, deliberate Phase 3.1 scope decision, not an
   oversight (`packages/domain/src/meta/crypto.ts`'s own doc comment).
@@ -259,9 +348,10 @@ clean-database verification for this migration**, confirmed green in §16.
 - No account/business discovery, campaign sync, Insights, webhooks, or mutations — all
   explicitly out of this phase's scope (Phase 3.3/Phase 4/Phase 5).
 
-## 20. Phase 3.2 Prerequisites
+## 22. Phase 3.2 Prerequisites
 
-Real Meta Developer App credentials (owner-provided) to close §15's UAT blocker. Everything
-else — connection health-state transition logic beyond the basic 5-value enum, proactive
-health checks, reconnect-detection refinements — is already scoped in `meta-connection-
-health.md` and can build directly on this phase's `MetaConnection` model without rework.
+None outstanding from this phase — real Meta UAT is complete (§15), and the architecture-
+compliance defect it surfaced is fixed and verified (§16). Connection health-state transition
+logic beyond the basic 5-value enum, proactive health checks, and reconnect-detection
+refinements are already scoped in `meta-connection-health.md` and can build directly on this
+phase's `MetaConnection` model without rework.

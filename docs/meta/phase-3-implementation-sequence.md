@@ -1,6 +1,6 @@
 # Meta Integration Implementation Sequence
 
-**Document ID:** META-120 | Version 1.2 | Status: Owner-Approved 2026-09-10; Phase 3.1 implemented 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1 (Implementation, complete)
+**Document ID:** META-120 | Version 1.3 | Status: Owner-Approved 2026-09-10; Phase 3.1 implemented and real-UAT-verified 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1 (Implementation, complete)
 
 ## 1. Phase Numbering (owner-decided 2026-09-10, binding — supersedes this document's prior
 
@@ -72,9 +72,12 @@ immediately before implementation (superseding Phase 3A's same-day pass for the 
 items). See `phase-3-1-implementation-report.md` for full detail, including §14's security-test
 coverage of all 20 threat-model rows relevant to this phase's scope.
 
-**Real Meta UAT is explicitly not complete** — blocked on the owner creating a Meta Developer
-App and providing Development-mode credentials (no interactive account/app creation was
-performed on the owner's behalf, per this project's standing operating constraint). This
-phase's own re-verification confirmed real UAT will not require App Review or Business
-Verification first once credentials exist (Development-mode + an app-role user is sufficient).
-Phase 3.2 does not begin until real UAT closes this gap.
+**Real Meta UAT is complete (2026-09-10).** The owner created a Meta Developer App and
+provided Development-mode credentials; a real OAuth round-trip (connect, reconnect, disconnect,
+a genuine Meta-rejected failure case) was performed and verified end-to-end against the real
+Meta API — see `phase-3-1-implementation-report.md` §15–17. Real UAT surfaced one genuine
+implementation defect (the callback incorrectly required a request-time auth header that no
+real browser redirect can ever carry, contradicting the already-approved `meta-oauth.md` §2
+design) — fixed as the minimum necessary correction, re-verified by the full test/build/lint/
+security-scan suite plus a fresh real OAuth round-trip, and documented in the same report's
+§16. Phase 3.2 may now begin.

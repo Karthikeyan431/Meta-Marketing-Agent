@@ -270,14 +270,19 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
   );
 
   /**
-   * OAuth callback (meta-oauth.md §2). No client-provided workspace/user/Meta-account ID is
-   * ever trusted — the workspace and user come only from the server-held state payload,
-   * re-verified fresh against the database (never trusted merely because the state lookup
-   * succeeded). `requireAuth()` runs here too (this is a real browser redirect, carrying the
-   * user's live session, unlike the Clerk webhook's server-to-server exception) — the
-   * currently-authenticated user is compared against the state's stored `userId`,
-   * rejecting a "wrong user" completion (meta-threat-model.md, test-matrix OAuth: wrong
-   * user).
+   * OAuth callback (meta-oauth.md §2, meta-api-contracts.md's authorization-chain table).
+   * Deliberately **no `requireAuth()` chain** — this is a top-level browser redirect
+   * initiated by Meta's server, not a same-origin fetch(), so it can never carry an
+   * `Authorization: Bearer` header; requiring one here is unreachable by any real browser
+   * and was a Phase 3.1 implementation defect caught only by real UAT (docs/meta/phase-3-1
+   * -implementation-report.md's UAT addendum). Identical exception pattern to the
+   * already-shipped `POST /webhooks/clerk`. The state payload — unpredictable, single-use,
+   * short-TTL, bound to the initiating user+workspace at issuance (meta-oauth.md §3) — is
+   * itself the authentication. No client-provided workspace/user/Meta-account ID is ever
+   * trusted — the workspace and user come only from the server-held state payload, and the
+   * membership/permission that authorized state issuance is re-verified fresh against the
+   * database at callback time (ADR-028 "never trust a prior check, re-derive fresh"),
+   * rejecting a membership revoked or downgraded between initiation and completion.
    */
   app.get<{
     Querystring: { state?: string; code?: string; error?: string };
@@ -334,26 +339,14 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
 
     // Never trust the state payload alone as still-authorized — re-derive fresh, exactly
     // like every other mutation in this codebase (ADR-028's "never trust a prior check").
-    let currentUser;
-    try {
-      currentUser = await requireAuth(request);
-    } catch {
-      await auditFailure(
-        "unauthenticated_at_callback",
-        statePayload.workspaceId,
-        statePayload.userId,
-      );
-      redirectResult("error", "session_expired");
-      return;
-    }
-    if (currentUser.id !== statePayload.userId) {
-      await auditFailure("wrong_user", statePayload.workspaceId, statePayload.userId);
-      redirectResult("error", "wrong_user");
-      return;
-    }
-
+    // There is no request-time identity to compare against (see doc comment above); the
+    // state payload's own `userId`/`workspaceId` — captured at issuance, when the caller
+    // *was* freshly authenticated and authorized by `POST .../meta/connect` — is the only
+    // identity this endpoint ever has, and re-verifying its membership/permission is still
+    // live protects against it having been revoked since.
+    const currentUserId = statePayload.userId;
     const freshMembership = await findMembership(prisma, {
-      userId: currentUser.id,
+      userId: currentUserId,
       workspaceId: statePayload.workspaceId,
     });
     if (
@@ -364,7 +357,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         "wrong_workspace_or_insufficient_permission",
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "wrong_workspace");
       return;
@@ -392,7 +385,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         `token_exchange_failed:${classifyMetaApiFailure(tokenError)}`,
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "token_exchange_failed");
       return;
@@ -410,7 +403,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         `token_validation_failed:${classifyMetaApiFailure(validationError)}`,
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "token_validation_failed");
       return;
@@ -419,7 +412,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         "token_validation_failed:invalid_token",
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "token_validation_failed");
       return;
@@ -431,7 +424,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         `insufficient_permission:${missingScopes.join(",")}`,
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "insufficient_permission");
       return;
@@ -444,7 +437,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       await auditFailure(
         `identity_lookup_failed:${classifyMetaApiFailure(identityError)}`,
         statePayload.workspaceId,
-        currentUser.id,
+        currentUserId,
       );
       redirectResult("error", "identity_lookup_failed");
       return;
@@ -457,7 +450,7 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       scopes: debugInfo.scopes,
       tokenExpiresAt: expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000) : null,
       encryptionKey: config.encryptionKey,
-      actorUserId: currentUser.id,
+      actorUserId: currentUserId,
       correlationId: request.requestId,
     });
 
