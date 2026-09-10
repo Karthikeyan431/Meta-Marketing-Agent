@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   getPrismaClient,
   provisionUser,
+  findUserByClerkId,
   syncOrganizationCreated,
   syncOrganizationUpdated,
   syncOrganizationDeleted,
@@ -150,12 +151,14 @@ describe("Clerk webhook/reconciliation sync handlers (identity-sync.md)", () => 
       });
       expect(membership.role).toBe("VIEWER");
 
-      // Promote the member locally (application-initiated).
+      // Promote the member locally (application-initiated) — the workspace owner acts,
+      // never the member promoting themselves (rbac.md §8.2 rule 2).
+      const owner = await findUserByClerkId(prisma, ownerClerkUserId);
       await changeMembershipRole(prisma, {
         membershipId: membership.id,
         workspaceId: workspace.id,
         newRole: "MANAGER",
-        actorUserId: membership.userId,
+        actorUserId: owner!.id,
       });
 
       // A subsequent Clerk membership.updated event must not revert the role.

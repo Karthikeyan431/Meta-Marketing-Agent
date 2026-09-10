@@ -1,6 +1,94 @@
 import type { PrismaClient, Prisma, Role, WorkspaceMembership } from "@prisma/client";
 import { recordAuditEvent } from "./audit.js";
-import { MembershipNotFoundError, OwnerInvariantError } from "./errors.js";
+import {
+  MembershipNotFoundError,
+  OwnerInvariantError,
+  InsufficientRoleAuthorityError,
+  SelfRoleMutationError,
+  OwnerAssignmentNotAllowedError,
+} from "./errors.js";
+
+/** Roles permitted to invite/update/remove members at all — rbac.md §8.1
+ *  (`members.invite`/`members.update`/`members.remove` are OWNER/ADMIN only). Re-checked
+ *  fresh, inside the mutating transaction, as a domain-layer defense-in-depth control —
+ *  never assumes an API-layer `requirePermission()` already ran (Phase 2.4A, ADR-028). */
+const ROLE_MUTATION_AUTHORITY_ROLES: readonly Role[] = ["OWNER", "ADMIN"];
+
+/**
+ * Fetches the acting user's CURRENT membership in the workspace (fresh, inside the caller's
+ * transaction) and verifies it is active and holds OWNER or ADMIN. Throws
+ * `InsufficientRoleAuthorityError` otherwise — including when the actor has no membership
+ * in this workspace at all, which is itself a form of insufficient authority, not a
+ * separate "not found" case (never reveals whether the actor "would" have had authority in
+ * some other workspace).
+ */
+async function requireRoleMutationAuthority(
+  tx: Prisma.TransactionClient,
+  input: { workspaceId: string; actorUserId: string },
+): Promise<WorkspaceMembership> {
+  const actor = await tx.workspaceMembership.findUnique({
+    where: { workspaceId_userId: { workspaceId: input.workspaceId, userId: input.actorUserId } },
+  });
+
+  if (!actor || actor.status !== "ACTIVE" || !ROLE_MUTATION_AUTHORITY_ROLES.includes(actor.role)) {
+    throw new InsufficientRoleAuthorityError();
+  }
+
+  return actor;
+}
+
+/**
+ * Wraps a mutation's transaction to additionally capture authorization/invariant denials as
+ * a `FAILURE`-outcome `AuditEvent` (Phase 2.4 Step 8: "permission denial," "owner-removal
+ * rejection" are required audit categories). Written as a **separate**, non-transactional
+ * insert after the mutation's own transaction has already rolled back — a denial audit row
+ * cannot live inside the same transaction as the mutation it describes, since that
+ * transaction is exactly what failed. `describeDenial` returns `null` for errors that
+ * aren't a security-relevant denial (e.g. `MembershipNotFoundError` — a resource-not-found
+ * outcome, not an authorization decision), in which case nothing is audited and the
+ * original error still propagates unchanged.
+ */
+async function withDenialAudit<T>(
+  prisma: PrismaClient,
+  run: () => Promise<T>,
+  describeDenial: (error: Error) => {
+    workspaceId: string;
+    actorUserId: string;
+    eventType: string;
+    resourceType: string;
+    resourceId?: string | null;
+    action: string;
+    correlationId?: string | null;
+    metadata?: Record<string, unknown>;
+  } | null,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof Error) {
+      const denial = describeDenial(error);
+      if (denial) {
+        await recordAuditEvent(prisma, {
+          workspaceId: denial.workspaceId,
+          actorType: "USER",
+          actorId: denial.actorUserId,
+          eventType: denial.eventType,
+          resourceType: denial.resourceType,
+          resourceId: denial.resourceId ?? null,
+          action: denial.action,
+          outcome: "FAILURE",
+          correlationId: denial.correlationId ?? null,
+          metadata: {
+            ...denial.metadata,
+            errorCode: (error as { code?: string }).code,
+            errorMessage: error.message,
+          },
+        });
+      }
+    }
+    throw error;
+  }
+}
 
 export async function findMembership(
   prisma: PrismaClient,
@@ -79,12 +167,44 @@ export interface RemoveMembershipInput {
 }
 
 /**
- * Application-initiated membership removal (Phase 2.3 Step 6 / `members.remove`). Blocks
- * removal of a workspace's last active OWNER — the caller must transfer ownership first
- * (`transferOwnership` below). Transactional and safe under concurrent owner-removal
- * attempts against the same workspace (see `lockActiveOwnerRows`).
+ * Application-initiated membership removal (Phase 2.3 Step 6 / `members.remove`; actor
+ * authority hardened Phase 2.4, ADR-028). Blocks removal of a workspace's last active
+ * OWNER — the caller must transfer ownership first (`transferOwnership` below).
+ * Transactional and safe under concurrent owner-removal attempts against the same
+ * workspace (see `lockActiveOwnerRows`).
+ *
+ * Authority model: a member may always remove **themselves** ("leave the workspace"),
+ * regardless of role — subject to the owner invariant below, which still blocks a sole
+ * owner from leaving without transferring first. Removing **someone else** requires the
+ * actor to currently hold OWNER or ADMIN (`requireRoleMutationAuthority`, re-checked fresh
+ * inside this transaction — never trusts a prior, possibly-stale, API-layer check alone).
  */
 export async function removeMembership(
+  prisma: PrismaClient,
+  input: RemoveMembershipInput,
+): Promise<WorkspaceMembership> {
+  return withDenialAudit(
+    prisma,
+    () => removeMembershipTx(prisma, input),
+    (error) => {
+      if (error instanceof InsufficientRoleAuthorityError || error instanceof OwnerInvariantError) {
+        return {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          eventType: "membership.removal_denied",
+          resourceType: "workspace_membership",
+          resourceId: input.membershipId,
+          action: "remove",
+          correlationId: input.correlationId,
+          metadata: { reason: error.name },
+        };
+      }
+      return null;
+    },
+  );
+}
+
+async function removeMembershipTx(
   prisma: PrismaClient,
   input: RemoveMembershipInput,
 ): Promise<WorkspaceMembership> {
@@ -100,6 +220,13 @@ export async function removeMembership(
       membership.status !== "ACTIVE"
     ) {
       throw new MembershipNotFoundError();
+    }
+
+    if (membership.userId !== input.actorUserId) {
+      await requireRoleMutationAuthority(tx, {
+        workspaceId: input.workspaceId,
+        actorUserId: input.actorUserId,
+      });
     }
 
     if (membership.role === "OWNER" && ownerRows.length <= 1) {
@@ -136,9 +263,66 @@ export interface ChangeMembershipRoleInput {
   correlationId?: string | null;
 }
 
-/** Application-initiated role change (Phase 2.3 Step 6 / `members.update`). Blocks
- *  demoting a workspace's last active OWNER away from OWNER. */
+/**
+ * Application-initiated role change (Phase 2.3 Step 6 / `members.update`; hardened Phase
+ * 2.4, ADR-028 — closes the OWNER-assignment gap identified during Phase 2.4A review).
+ *
+ * **Design correction made during Phase 2.4 implementation** (documented transparently,
+ * not silently): Phase 2.4A's `rbac.md` §8.2 originally specified an *unconditional* ban on
+ * `newRole === "OWNER"` through this function. Implementing that literally would have made
+ * co-ownership entirely unreachable — contradicting the older, already-approved
+ * `workspace-model.md` §5 / ADR-020, which explicitly treats "another active owner"
+ * existing as a legitimate alternative to `transferOwnership()` when removing an owner (an
+ * alternative that can only ever arise if a workspace can legitimately reach 2+ owners in
+ * the first place). The refined rule below resolves that internal contradiction in favor
+ * of the older, more foundational decision: adding a co-owner is invariant-safe by
+ * construction (it can never cause zero owners) and is only unsafe when it amounts to
+ * *escalation* — so it is restricted to OWNER-acting-only, never ADMIN, and never
+ * self-service.
+ *
+ * Checks run before any owner-invariant or persistence logic, in this order:
+ * 1. **Actor authority** — the actor must currently hold OWNER or ADMIN in this workspace
+ *    (`requireRoleMutationAuthority`), re-checked fresh, never trusted from a prior call.
+ * 2. **No self-mutation** — a membership can never change its own role (rbac.md §8.2 rule
+ *    3), regardless of what role the actor holds or is requesting — this alone already
+ *    closes the original self-escalation vector.
+ * 3. **OWNER assignment requires an OWNER actor** — `newRole === "OWNER"` is rejected
+ *    unless the acting membership's role is itself OWNER; an ADMIN can never grant OWNER to
+ *    anyone, including another ADMIN, regardless of any other permission they hold.
+ *
+ * Only after all of the above does the existing owner-invariant demotion check run.
+ */
 export async function changeMembershipRole(
+  prisma: PrismaClient,
+  input: ChangeMembershipRoleInput,
+): Promise<WorkspaceMembership> {
+  return withDenialAudit(
+    prisma,
+    () => changeMembershipRoleTx(prisma, input),
+    (error) => {
+      if (
+        error instanceof InsufficientRoleAuthorityError ||
+        error instanceof SelfRoleMutationError ||
+        error instanceof OwnerAssignmentNotAllowedError ||
+        error instanceof OwnerInvariantError
+      ) {
+        return {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          eventType: "membership.role_change_denied",
+          resourceType: "workspace_membership",
+          resourceId: input.membershipId,
+          action: "update",
+          correlationId: input.correlationId,
+          metadata: { reason: error.name, requestedRole: input.newRole },
+        };
+      }
+      return null;
+    },
+  );
+}
+
+async function changeMembershipRoleTx(
   prisma: PrismaClient,
   input: ChangeMembershipRoleInput,
 ): Promise<WorkspaceMembership> {
@@ -154,6 +338,19 @@ export async function changeMembershipRole(
       membership.status !== "ACTIVE"
     ) {
       throw new MembershipNotFoundError();
+    }
+
+    const actor = await requireRoleMutationAuthority(tx, {
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+    });
+
+    if (membership.userId === input.actorUserId) {
+      throw new SelfRoleMutationError();
+    }
+
+    if (input.newRole === "OWNER" && actor.role !== "OWNER") {
+      throw new OwnerAssignmentNotAllowedError();
     }
 
     if (membership.role === "OWNER" && input.newRole !== "OWNER" && ownerRows.length <= 1) {
@@ -195,8 +392,41 @@ export interface TransferOwnershipInput {
  * ADMIN (never removed as a side effect — a separate `removeMembership` call handles that,
  * if desired, once they're no longer the last owner), the incoming member becomes OWNER.
  * Never produces a window where the workspace has zero active owners.
+ *
+ * **Hardened Phase 2.4 (ADR-028):** `input.actorUserId` must equal the outgoing (`from`)
+ * membership's own `userId` — an OWNER may only transfer away *their own* ownership, never
+ * orchestrate a transfer between two other members' memberships on their behalf. Phase
+ * 2.4A's `rbac.md` §8.2 rule 4 asserted this was "already implicitly true"; it was not —
+ * found and closed during Phase 2.4 implementation review. Without this check, any caller
+ * naming a real owner's `fromMembershipId` could transfer that owner's role away
+ * regardless of who was actually acting.
  */
 export async function transferOwnership(
+  prisma: PrismaClient,
+  input: TransferOwnershipInput,
+): Promise<{ from: WorkspaceMembership; to: WorkspaceMembership }> {
+  return withDenialAudit(
+    prisma,
+    () => transferOwnershipTx(prisma, input),
+    (error) => {
+      if (error instanceof InsufficientRoleAuthorityError || error instanceof OwnerInvariantError) {
+        return {
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          eventType: "workspace.ownership_transfer_denied",
+          resourceType: "workspace_membership",
+          resourceId: input.fromMembershipId,
+          action: "transfer",
+          correlationId: input.correlationId,
+          metadata: { reason: error.name, toMembershipId: input.toMembershipId },
+        };
+      }
+      return null;
+    },
+  );
+}
+
+async function transferOwnershipTx(
   prisma: PrismaClient,
   input: TransferOwnershipInput,
 ): Promise<{ from: WorkspaceMembership; to: WorkspaceMembership }> {
@@ -216,6 +446,11 @@ export async function transferOwnership(
     }
     if (from.role !== "OWNER") {
       throw new OwnerInvariantError("Source membership is not an owner.");
+    }
+    if (from.userId !== input.actorUserId) {
+      throw new InsufficientRoleAuthorityError(
+        "Only the outgoing owner may initiate their own ownership transfer.",
+      );
     }
     if (from.id === to.id) {
       throw new OwnerInvariantError("Cannot transfer ownership to the same membership.");

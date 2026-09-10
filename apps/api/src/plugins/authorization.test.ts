@@ -85,4 +85,23 @@ describe("requireResourceAccess (authorization.md §2/§3 — the IDOR/BOLA rule
       (missingError as ResourceNotFoundError).message,
     );
   });
+
+  it("[mismatched resource/workspace pair] a resource whose workspaceId exists but doesn't match any authorized workspace the caller could plausibly claim still 404s", () => {
+    // A caller "spoofing" workspace-2 (a real workspace elsewhere in the system) to reach a
+    // resource that actually belongs to workspace-1 — the mismatch direction doesn't matter,
+    // only whether resource.workspaceId equals the one AUTHORIZED value ever does.
+    const resource = { id: "r1", workspaceId: "workspace-1" };
+    expect(() => requireResourceAccess(resource, "workspace-2")).toThrow(ResourceNotFoundError);
+  });
+
+  it("workspace scope is the only thing checked — a resource's own lifecycle/status is a separate, caller-side concern", () => {
+    // requireResourceAccess() is deliberately generic: it doesn't know about `status`,
+    // `deletedAt`, or any other business field a specific resource type might carry. A
+    // REMOVED membership still "belongs" to its workspace for this check's purposes —
+    // callers that care whether a resource is soft-deleted/inactive must check that
+    // separately (Phase 2.3's requireWorkspaceMembership() does this for Workspace.status,
+    // for example). This test documents that boundary, not a gap.
+    const removedMembership = fakeMembership({ status: "REMOVED" });
+    expect(requireResourceAccess(removedMembership, "workspace-1")).toBe(removedMembership);
+  });
 });

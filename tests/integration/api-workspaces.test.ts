@@ -193,5 +193,26 @@ describe("Workspace API (Phase 2.3 Step 8) and cross-tenant security (Step 12)",
       expect(body.data.memberships).toHaveLength(1);
       expect(body.data.memberships[0].id).toBe(workspaceA.id);
     });
+
+    it("[W4] a suspended/deleted workspace is inaccessible even to an actual member — identical to not being a member", async () => {
+      const clerkUserId = testClerkUserId();
+      const { workspace } = await createWorkspaceWithOwner(prisma, {
+        clerkOrganizationId: testClerkOrgId(),
+        name: "Soon Suspended Workspace",
+        ownerClerkUserId: clerkUserId,
+        syncedAt: new Date(),
+      });
+
+      await prisma.workspace.update({ where: { id: workspace.id }, data: { status: "SUSPENDED" } });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/switch`,
+        headers: await authHeaders(clerkUserId),
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe("AUTHORIZATION_ERROR");
+    });
   });
 });

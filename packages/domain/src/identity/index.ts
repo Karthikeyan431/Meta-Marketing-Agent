@@ -1,4 +1,11 @@
-export { OwnerInvariantError, MembershipNotFoundError, DeferredSyncError } from "./errors.js";
+export {
+  OwnerInvariantError,
+  MembershipNotFoundError,
+  DeferredSyncError,
+  InsufficientRoleAuthorityError,
+  SelfRoleMutationError,
+  OwnerAssignmentNotAllowedError,
+} from "./errors.js";
 
 export {
   findUserByClerkId,

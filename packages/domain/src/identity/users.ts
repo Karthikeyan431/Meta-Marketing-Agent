@@ -1,5 +1,4 @@
 import type { Prisma, PrismaClient, User } from "@prisma/client";
-import { isUniqueConstraintViolation } from "../prisma-errors.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -26,23 +25,38 @@ export async function findUserById(db: Db, id: string): Promise<User | null> {
  * Application-user provisioning (Phase 2.3 Step 3): verify Clerk identity happens upstream
  * (apps/api's requireAuth()); this only ever resolves-or-creates our own `users` row keyed
  * by the verified `clerkUserId`. Idempotent and race-safe for concurrent first requests —
- * tries `create`, and on a unique-constraint race with another concurrent first request,
- * refetches the row the other request just committed instead of erroring. The database's
- * own unique constraint on `clerk_user_id` is the final protection, not a pre-check.
+ * including when nested inside a caller's own transaction (`createWorkspaceWithOwner()`
+ * calls `provisionUser(tx, ...)`).
+ *
+ * **Fixed twice during Phase 2.4** (found via real, intermittently-failing concurrency
+ * tests, not just inspection — both fixes are load-bearing, neither alone was sufficient):
+ *
+ * 1. The original implementation used a `create()` + catch-unique-violation + refetch
+ *    pattern. That is race-safe when `db` is the top-level `PrismaClient` (each statement is
+ *    its own implicit transaction) — but not when `db` is a `Prisma.TransactionClient`
+ *    nested inside a caller's own `$transaction`: Postgres aborts the *entire* transaction
+ *    on the first statement error and refuses every subsequent command (`25P02`) until an
+ *    explicit ROLLBACK, so the "refetch after catching the violation" query itself failed.
+ * 2. Switching to Prisma's `upsert()` did not fully fix this either — under genuine
+ *    concurrent load it was still observed to surface a raw, uncaught unique-constraint
+ *    error rather than resolving silently (Prisma does not guarantee `upsert()` compiles to
+ *    a single atomic `INSERT ... ON CONFLICT` statement in every case/version).
+ *
+ * The fix that actually holds under real concurrent load: a raw `INSERT ... ON CONFLICT
+ * (clerk_user_id) DO NOTHING` — a single statement Postgres itself guarantees never raises a
+ * client-visible constraint-violation error, safe both standalone and nested in any
+ * transaction — followed by a normal typed fetch of the now-guaranteed-to-exist row. The
+ * database's unique constraint remains the actual mechanism preventing a duplicate row;
+ * `updated_at` is set explicitly since it has no database-level default (`@updatedAt` is
+ * Prisma-client-managed only, invisible to raw SQL).
  */
 export async function provisionUser(db: Db, input: ProvisionUserInput): Promise<User> {
-  const existing = await findUserByClerkId(db, input.clerkUserId);
-  if (existing) return existing;
-
-  try {
-    return await db.user.create({ data: { clerkUserId: input.clerkUserId } });
-  } catch (error) {
-    if (isUniqueConstraintViolation(error, "clerk_user_id")) {
-      const raced = await findUserByClerkId(db, input.clerkUserId);
-      if (raced) return raced;
-    }
-    throw error;
-  }
+  await db.$executeRaw`
+    INSERT INTO users (clerk_user_id, updated_at)
+    VALUES (${input.clerkUserId}, CURRENT_TIMESTAMP)
+    ON CONFLICT (clerk_user_id) DO NOTHING
+  `;
+  return db.user.findUniqueOrThrow({ where: { clerkUserId: input.clerkUserId } });
 }
 
 /**

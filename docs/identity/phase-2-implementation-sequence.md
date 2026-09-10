@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.4 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized, Phase 2.4 implementation not started) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.5 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -32,6 +32,18 @@ available and the full authentication boundary was re-verified end-to-end agains
 real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
 No code change was required. This closes the "no real Clerk application" limitation
 carried since Phase 2.1/2.2.
+
+**Phase 2.4 (2026-09-10):** RBAC & Permission Enforcement implemented — see
+`phase-2-4-implementation-report.md`. Closed the OWNER-assignment gap in
+`changeMembershipRole()` and a second, previously-unidentified gap in `transferOwnership()`
+(never verified the acting user was the outgoing owner); added actor-authority enforcement,
+self-escalation prevention, and denial-audit logging to the domain-layer mutation
+functions; corrected `rbac.md` §8.2's rule 1 (co-ownership must remain reachable, per
+ADR-020 — an unconditional OWNER-assignment ban was a Phase 2.4A drafting error). Also
+fixed a genuine concurrency bug in `provisionUser()` found via a flaky test. 135 tests
+(56 unit + 79 integration), real Clerk UAT. **No new API routes, no migration, no new
+role/permission** — architecture-conforming implementation only, per that task's Hard
+Restrictions.
 
 **Phase 2.4A (2026-09-10):** RBAC & Permission Enforcement architecture finalized —
 `rbac.md` (role hierarchy model, role mutation/self-escalation rules),

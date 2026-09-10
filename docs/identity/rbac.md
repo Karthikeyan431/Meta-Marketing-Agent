@@ -1,6 +1,6 @@
 # RBAC — Roles and Permissions
 
-**Document ID:** IDENT-005 | Version 1.3 | Status: Approved (Owner Decision, 2026-09-05); §§7–9 added Phase 2.4A (2026-09-10, architecture finalization — see `phase-2-4a-decisions.md`) | Phase: 2A / 2.4A
+**Document ID:** IDENT-005 | Version 1.4 | Status: Approved (Owner Decision, 2026-09-05); §§7–9 added Phase 2.4A (2026-09-10); §8.2 corrected Phase 2.4 (2026-09-10, implementation review — see `phase-2-4-implementation-report.md` §2) | Phase: 2A / 2.4A / 2.4
 
 `SEC-004` (RBAC_AUTHORIZATION.md) explicitly states its own example roles
 (OWNER/ADMIN/MARKETER/ANALYST/APPROVER/VIEWER) are "product concepts; exact permissions
@@ -210,41 +210,56 @@ these operations at all — this alone is the primary defense against MANAGER/AN
 self- or other-escalation, since `requirePermission()` rejects the call before any role
 comparison logic even runs.
 
-### 8.2 The OWNER-assignment gap (identified during Phase 2.4A review — binding for Phase 2.4 implementation)
+### 8.2 The OWNER-assignment gap — found in Phase 2.4A review, closed and corrected in Phase 2.4 implementation
 
-**Finding:** `changeMembershipRole()`'s `newRole: Role` parameter currently accepts
-`"OWNER"` as a value with no special-casing — its only invariant check is against
+**Finding (Phase 2.4A):** `changeMembershipRole()`'s `newRole: Role` parameter accepted
+`"OWNER"` as a value with no special-casing — its only invariant check was against
 _demoting_ the workspace's last active owner, not against a _second_ concurrent owner being
-created outside the atomic `transferOwnership()` swap. If a future route called
-`changeMembershipRole({ newRole: "OWNER", ... })` directly, it would let an ADMIN (who holds
-`members.update`) unilaterally promote any member to OWNER — including themselves —
-producing a workspace with two OWNERs without any transfer/demotion ever occurring, and
-without violating the zero-owners invariant (which only checks the _low_ bound, never the
-count going up). This is not currently exploitable (no route calls this function with
-attacker-influenced input today), but it is a **latent gap that must be closed before any
-member-role-change endpoint ships**.
+created outside the atomic `transferOwnership()` swap. An ADMIN (who holds
+`members.update`) could unilaterally promote any member to OWNER — including themselves.
 
-**Binding rule for Phase 2.4 implementation:**
+**Second finding (Phase 2.4 implementation review):** `transferOwnership()` also never
+verified that the acting user (`actorUserId`) was actually the outgoing owner
+(`from.userId`) — Phase 2.4A's rule 4 below incorrectly asserted this was "already
+implicitly true." It was not: any caller naming a real owner's `fromMembershipId` could
+transfer that owner's role away regardless of who was actually acting. Both gaps are now
+closed in `packages/domain/src/identity/memberships.ts`.
 
-1. `changeMembershipRole()` must reject `newRole === "OWNER"` unconditionally — assigning
-   OWNER is **exclusively** possible through `transferOwnership()`, which already requires
-   the acting membership to itself currently hold OWNER (`from.role !== "OWNER"` throws) and
-   performs the promotion/demotion as one atomic pair, never a lone promotion.
-2. The API layer must additionally enforce, before calling `changeMembershipRole()`: the
-   acting membership's role must outrank the **target** role being assigned, using §7's role
-   authority order (`OWNER > ADMIN > MANAGER > ANALYST > VIEWER`) — concretely, in practice
-   this reduces to "ADMIN may assign ADMIN/MANAGER/ANALYST/VIEWER to others" (MANAGER and
-   below hold no `members.update` permission at all, so no further role-vs-role comparison
-   is reachable by them regardless).
-3. **No membership may change its own role**, under any permission it holds — the acting
-   user's `userId` must differ from the target membership's `userId` for every call to
-   `changeMembershipRole()`/`removeMembership()`. This is a blanket self-service-escalation
-   block, simpler and safer than reasoning about whether a specific self-change would
-   "happen" to be safe.
-4. `transferOwnership()`'s `fromMembershipId` must belong to the **acting, authenticated**
-   user (an OWNER may only transfer away _their own_ ownership, never orchestrate a transfer
-   between two other members' memberships on their behalf) — already implicitly true by the
-   function's existing invariant checks, restated here as an explicit API-layer requirement.
+**Design correction made during Phase 2.4 implementation** (not silently — recorded here):
+Phase 2.4A's rule 1 below originally specified an _unconditional_ ban on `newRole ===
+"OWNER"` through `changeMembershipRole()`. Implementing that literally would have made
+co-ownership entirely unreachable through any code path — contradicting the older,
+already-approved `workspace-model.md` §5 / ADR-020, which explicitly treats "another active
+owner" existing as a legitimate _alternative_ to `transferOwnership()` when removing an
+owner (a state that can only arise if a workspace can legitimately reach 2+ owners in the
+first place). The implemented rule below resolves this in favor of the older, more
+foundational decision: adding a co-owner is invariant-safe by construction (it can never
+cause zero owners) and is only unsafe when it amounts to escalation — so it is restricted to
+OWNER-acting-only, never ADMIN, and never self-service.
+
+**Implemented rule (binding, as built in `packages/domain/src/identity/memberships.ts`):**
+
+1. **Actor authority, re-checked fresh inside every mutation's transaction**
+   (`requireRoleMutationAuthority()`): the acting user must currently hold an ACTIVE
+   membership with role OWNER or ADMIN in this exact workspace — never trusted from a prior,
+   possibly-stale API-layer check alone. Applies to `changeMembershipRole()` and, for
+   removing someone _other than_ oneself, `removeMembership()`.
+2. **No membership may change its own role**, unconditionally, regardless of what role the
+   actor holds or is requesting (`changeMembershipRole()`) — this alone closes the original
+   self-escalation vector. Removing **oneself** ("leaving a workspace") remains allowed
+   regardless of role, subject to the owner invariant (§8.3) — a materially different,
+   privilege-neutral operation from a role change.
+3. **`newRole === "OWNER"` requires the acting membership to itself already be OWNER** — an
+   ADMIN can never grant OWNER to anyone, including another ADMIN, regardless of any other
+   permission they hold. An OWNER granting OWNER to someone else is a legitimate co-ownership
+   grant, invariant-safe by construction, consistent with ADR-020's "another active owner"
+   language.
+4. **`transferOwnership()`'s `fromMembershipId` must belong to the acting, authenticated
+   user** (`from.userId === actorUserId`, enforced in code, not just asserted in docs) — an
+   OWNER may only transfer away _their own_ ownership, never orchestrate a transfer between
+   two other members' memberships on their behalf.
+
+See `phase-2-4-implementation-report.md` for the regression tests proving each of these.
 
 ### 8.3 Owner invariant (restated, unchanged from Phase 2.3)
 
