@@ -307,8 +307,13 @@ moderate advisories), `prisma migrate status`: "Database schema is up to date!" 
 migration, zero schema change**, exactly as instructed to prefer. `gitleaks` 8.24.3 scanned
 the staged diff — no leaks.
 
-**CI run:** recorded in the follow-up commit (see the project's git history for the
-authoritative result, per the established two-commit pattern).
+**Commit:** `775eb146319ab1c86df88adf708e35143dc6a0d0`, pushed to `origin/main`
+(`5e6c8cd..775eb14`).
+
+**CI run:** **Green.** Run `34470452111` — `completed` / `success`, every stage passed
+(install, lint, format check, typecheck, migrations, RBAC seed, unit tests, integration
+tests, build, web production build, E2E tests, secret scan, dependency vulnerability scan):
+https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34470452111
 
 **Known limitations (addendum-specific):**
 
