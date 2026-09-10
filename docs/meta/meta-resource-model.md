@@ -1,10 +1,14 @@
 # Meta Resource Model (Identifier Model + Ad Hierarchy)
 
-**Document ID:** META-107 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-107 | Version 1.1 | Status: §4's `Ad Account` field set implemented 2026-09-10 (Phase 3.2); Campaign/Ad Set/Ad/Creative remain conceptual, unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.2 (Ad Account, complete)
 
 Consolidates `ai-marketing-manager-gate-5-docs/docs/06-meta/META_OBJECT_MODEL.md` (META-003)
 and `ai-marketing-manager-gate-3-docs/docs/04-data/SCHEMA_DESIGN.md` (DATA-003)'s existing
-field-level `ad_accounts`/`campaigns`/`ad_sets`/`ads` designs. Conceptual only — no migration.
+field-level `ad_accounts`/`campaigns`/`ad_sets`/`ads` designs. Conceptual only — no migration
+for Campaign/Ad Set/Ad/Creative (Phase 4.1+ scope); §4's `Ad Account` field set was
+implemented as the `AdAccount` Prisma model in Phase 3.2 — see
+`phase-3-2-implementation-report.md` §5 for the exact schema and its (minor, documented)
+naming reconciliation against this section.
 
 ## 1. Application ID vs. Meta External ID (from META-003, unchanged)
 

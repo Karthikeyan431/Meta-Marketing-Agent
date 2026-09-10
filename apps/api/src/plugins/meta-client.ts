@@ -1,13 +1,25 @@
 /**
- * Minimal Meta Graph API client for Phase 3.1 (OAuth + connection lifecycle only) —
- * meta-adapter-contract.md's full interface (listCampaigns, getInsights, etc.) is NOT
- * implemented here; this phase implements only what OAuth/connection establishment needs.
- * Live-verified endpoints/parameters, 2026-09-10 (docs/meta/meta-oauth.md §1):
- * developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow/,
- * .../documentation/facebook-login/guides/access-tokens/get-long-lived/.
+ * Minimal Meta Graph API client for Phase 3.1 (OAuth + connection lifecycle) and Phase 3.2
+ * (Business/Ad Account discovery) — meta-adapter-contract.md's full interface (listCampaigns,
+ * getInsights, etc.) is NOT implemented here; this file implements only what OAuth/connection
+ * establishment and discovery need. Live-verified endpoints/parameters:
+ * - OAuth (2026-09-10, docs/meta/meta-oauth.md §1): developers.facebook.com/docs/
+ *   facebook-login/guides/advanced/manual-flow/, .../documentation/facebook-login/guides/
+ *   access-tokens/get-long-lived/.
+ * - Discovery (2026-09-10, docs/meta/phase-3-2-implementation-report.md §2): developers.
+ *   facebook.com/docs/graph-api/reference/user/ (`businesses` edge), .../docs/marketing-api/
+ *   reference/ad-account (fields, `account_status` values), `me/adaccounts` endpoint usage,
+ *   .../docs/graph-api/results (cursor pagination).
  *
  * Provider-specific response shapes never leak past this file (meta-adapter-contract.md
- * §2) — every function returns an application-normalized shape.
+ * §2) — every function returns an application-normalized shape. `listBusinesses`/
+ * `listAdAccounts` are a deliberate, documented extension beyond meta-adapter-contract.md's
+ * originally-reconciled `getBusiness(connectionRef, externalBusinessId)` (a single-object
+ * lookup by an already-known ID) — discovery needs a LIST of businesses/accounts the token
+ * can access, which that single-lookup shape cannot express; this is a Phase 3.2
+ * implementation decision, not an architecture gap, exactly like meta-oauth.md §3's state-
+ * storage mechanism was left open as "a Phase 3.1 implementation decision" by the same
+ * document set.
  */
 
 const AUTHORIZE_BASE_URL = "https://www.facebook.com";
@@ -159,8 +171,8 @@ export interface MetaIdentity {
   id: string;
 }
 
-/** Minimal authorized-identity retrieval (`GET /me`) — Phase 3.1 scope only; full account/
- *  business discovery is Phase 3.3 (meta-account-discovery.md), not implemented here. */
+/** Minimal authorized-identity retrieval (`GET /me`) — Phase 3.1 OAuth scope; full business/
+ *  ad-account discovery is `listBusinesses`/`listAdAccounts` below (Phase 3.2). */
 export async function getMetaIdentity(params: {
   accessToken: string;
   apiVersion: string;
@@ -181,6 +193,144 @@ export async function getMetaIdentity(params: {
     });
   }
   return { id };
+}
+
+export interface MetaBusinessSummary {
+  id: string;
+  name: string;
+  verificationStatus?: string;
+}
+
+export interface MetaAdAccountSummary {
+  /** Meta's `act_{id}` form — round-trips directly into Graph API calls. */
+  id: string;
+  accountId: string;
+  name: string;
+  currency: string;
+  timezoneName: string;
+  /** Normalized from Meta's numeric `account_status` — never the raw code (see
+   *  `normalizeAccountStatus` below). `"UNKNOWN"` for any code this application doesn't yet
+   *  recognize, rather than throwing — a future Meta status code must never break discovery. */
+  accountStatus: string;
+  business: { id: string; name: string } | null;
+}
+
+/** Live-verified 2026-09-10, `developers.facebook.com/docs/marketing-api/reference/ad-account`. */
+const AD_ACCOUNT_STATUS_MAP: Record<number, string> = {
+  1: "ACTIVE",
+  2: "DISABLED",
+  3: "UNSETTLED",
+  7: "PENDING_RISK_REVIEW",
+  8: "PENDING_SETTLEMENT",
+  9: "IN_GRACE_PERIOD",
+  100: "PENDING_CLOSURE",
+  101: "CLOSED",
+  201: "ANY_ACTIVE",
+  202: "ANY_CLOSED",
+};
+
+function normalizeAccountStatus(code: unknown): string {
+  return typeof code === "number" && code in AD_ACCOUNT_STATUS_MAP
+    ? AD_ACCOUNT_STATUS_MAP[code]!
+    : "UNKNOWN";
+}
+
+/** Safety bound against a runaway pagination loop — no caller-supplied or Meta-supplied
+ *  input can make a discovery call fetch unboundedly (meta-rate-limits.md §5's AI-loop-
+ *  protection principle, generalized here to every caller, not only a future AI tool). */
+const MAX_DISCOVERY_PAGES = 20;
+
+/** Follows Meta's cursor-based `paging.next` (meta-adapter-contract.md §4) until absent or
+ *  `MAX_DISCOVERY_PAGES` is reached — never silently truncates a result set at the first
+ *  page, per the same contract. */
+async function fetchAllPages<TItem>(startUrl: URL): Promise<TItem[]> {
+  const results: TItem[] = [];
+  let nextUrl: string | undefined = startUrl.toString();
+  let pages = 0;
+
+  while (nextUrl && pages < MAX_DISCOVERY_PAGES) {
+    const response = await fetch(nextUrl, { method: "GET" });
+    const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok) {
+      throw metaErrorFromBody(body, response.status);
+    }
+    const data = body["data"];
+    if (Array.isArray(data)) {
+      results.push(...(data as TItem[]));
+    }
+    const paging = body["paging"] as Record<string, unknown> | undefined;
+    nextUrl = typeof paging?.["next"] === "string" ? (paging["next"] as string) : undefined;
+    pages += 1;
+  }
+
+  return results;
+}
+
+/** Businesses associated with the connected user (`meta-account-discovery.md` §2's "List
+ *  authorized Businesses"). Live-verified 2026-09-10,
+ *  `developers.facebook.com/docs/graph-api/reference/user/` (`businesses` edge). */
+export async function listBusinesses(params: {
+  accessToken: string;
+  apiVersion: string;
+}): Promise<MetaBusinessSummary[]> {
+  const url = new URL(`/${params.apiVersion}/me/businesses`, GRAPH_BASE_URL);
+  url.searchParams.set("access_token", params.accessToken);
+  url.searchParams.set("fields", "id,name,verification_status");
+  url.searchParams.set("limit", "100");
+
+  const rows = await fetchAllPages<Record<string, unknown>>(url);
+  return rows
+    .filter(
+      (row): row is Record<string, unknown> & { id: string; name: string } =>
+        typeof row["id"] === "string" && typeof row["name"] === "string",
+    )
+    .map((row) => ({
+      id: row["id"],
+      name: row["name"],
+      verificationStatus:
+        typeof row["verification_status"] === "string" ? row["verification_status"] : undefined,
+    }));
+}
+
+/** Ad accounts the connected user can access — directly-shared or via any Business
+ *  (`me/adaccounts` already aggregates both, meta-account-discovery.md §2). Live-verified
+ *  2026-09-10, `developers.facebook.com/docs/marketing-api/reference/ad-account` (fields) and
+ *  corroborated endpoint usage (`me/adaccounts?fields=...`). */
+export async function listAdAccounts(params: {
+  accessToken: string;
+  apiVersion: string;
+}): Promise<MetaAdAccountSummary[]> {
+  const url = new URL(`/${params.apiVersion}/me/adaccounts`, GRAPH_BASE_URL);
+  url.searchParams.set("access_token", params.accessToken);
+  url.searchParams.set(
+    "fields",
+    "id,account_id,name,currency,timezone_name,account_status,business{id,name}",
+  );
+  url.searchParams.set("limit", "100");
+
+  const rows = await fetchAllPages<Record<string, unknown>>(url);
+  return rows
+    .filter(
+      (row): row is Record<string, unknown> & { id: string; account_id: string; name: string } =>
+        typeof row["id"] === "string" &&
+        typeof row["account_id"] === "string" &&
+        typeof row["name"] === "string",
+    )
+    .map((row) => {
+      const business = row["business"] as Record<string, unknown> | undefined;
+      return {
+        id: row["id"],
+        accountId: row["account_id"],
+        name: row["name"],
+        currency: typeof row["currency"] === "string" ? row["currency"] : "",
+        timezoneName: typeof row["timezone_name"] === "string" ? row["timezone_name"] : "",
+        accountStatus: normalizeAccountStatus(row["account_status"]),
+        business:
+          business && typeof business["id"] === "string" && typeof business["name"] === "string"
+            ? { id: business["id"], name: business["name"] }
+            : null,
+      };
+    });
 }
 
 function metaErrorFromBody(body: Record<string, unknown>, httpStatus: number): MetaApiError {

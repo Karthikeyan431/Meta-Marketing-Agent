@@ -1,6 +1,20 @@
 # Meta Account Discovery
 
-**Document ID:** META-106 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-106 | Version 1.1 | Status: Implemented and real-UAT-verified 2026-09-10 (Phase 3.2) | Phase: 3A (Architecture Finalization, closed); Phase 3.2 (Implementation, complete)
+
+## 0. Implementation Status (Phase 3.2, 2026-09-10)
+
+Implemented as designed below, with these Phase 3.2 implementation decisions (not
+architecture changes): no separate `Business` table is persisted (§1's own "do not persist
+businesses automatically" — discovery is read-only/ephemeral; Business display metadata is
+denormalized onto `AdAccount` instead); `meta-adapter-contract.md`'s `getBusiness(connectionRef,
+externalBusinessId)` was extended with `listBusinesses(connectionRef)`/`listAdAccounts` list
+methods since discovery needs a list, not a single-ID lookup (documented in
+`meta-adapter-contract.md`'s own implementation-status note). Selection reuses
+`meta_connection.connect` exactly as §5 specifies; deselection reuses `meta_connection.
+disconnect` by the same reasoning (the inverse operation). See
+`phase-3-2-implementation-report.md` for the full implementation record, real Meta
+documentation re-verification, and real UAT results.
 
 ## 1. Scope for V1
 

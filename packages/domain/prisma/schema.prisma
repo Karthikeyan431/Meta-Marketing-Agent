@@ -9,8 +9,15 @@
 // only — one row per workspace (OD-3A-04), credential material encrypted at the application
 // layer (meta-token-security.md §2), never exposed through any API response.
 //
+// Phase 3.2 (Meta Business & Ad Account Discovery) — see docs/meta/meta-account-discovery.md
+// (design) and docs/meta/phase-3-2-implementation-report.md (this implementation). Adds
+// AdAccount only — discovery itself is never persisted; a row exists only once a user has
+// explicitly selected an account. No separate Business table (meta-account-discovery.md's
+// "do not persist businesses automatically unless the approved data model requires it" — it
+// does not; Business display metadata is denormalized onto AdAccount instead).
+//
 // Deliberately NOT modeled here (per meta-architecture.md and this phase's own Hard
-// Restrictions): ad_accounts, campaigns, ad_sets, ads, creatives, insights, webhook_events,
+// Restrictions): campaigns, ad_sets, ads, creatives, insights, webhook_events,
 // conversations, messages, ai_runs, ai_tool_calls, actions, approvals, goals,
 // optimization_*, reports — all deferred to the phases that own them (Phase 4+). AuditEvent
 // below is scoped ONLY to identity/workspace lifecycle events plus Meta connection lifecycle
@@ -117,6 +124,7 @@ model Workspace {
   memberships    WorkspaceMembership[]
   auditEvents    AuditEvent[]
   metaConnection MetaConnection?
+  adAccounts     AdAccount[]
 
   @@map("workspaces")
 }
@@ -137,8 +145,8 @@ model WorkspaceMembership {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  workspace Workspace                       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   overrides MembershipPermissionOverride[]
 
   /// One user cannot have duplicate membership in a workspace (Phase 2.3 Step 2 invariant).
@@ -198,8 +206,8 @@ model MembershipPermissionOverride {
 /// AUDIT_LOGGING.md/SEC-012's required metadata). NOT the full future business audit
 /// system (campaigns/actions/approvals, etc. — identity-data-model.md §3 defers that).
 model AuditEvent {
-  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String?        @map("workspace_id") @db.Uuid
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String? @map("workspace_id") @db.Uuid
 
   actorType AuditActorType @map("actor_type")
   /// Our internal User.id when actorType = USER; a stable descriptive string (e.g.
@@ -208,8 +216,8 @@ model AuditEvent {
   actorId   String?        @map("actor_id")
 
   eventType    String
-  resourceType String? @map("resource_type")
-  resourceId   String? @map("resource_id")
+  resourceType String?      @map("resource_type")
+  resourceId   String?      @map("resource_id")
   action       String
   outcome      AuditOutcome
 
@@ -244,7 +252,7 @@ model MetaConnection {
   id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String @unique @map("workspace_id") @db.Uuid
 
-  provider String @default("meta")
+  provider       String @default("meta")
   /// Meta's own user ID (from `GET /me`) — external identity only, never an authorization
   /// key on its own (meta-resource-model.md §1).
   externalUserId String @map("external_user_id")
@@ -273,9 +281,74 @@ model MetaConnection {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   disconnectedAt DateTime? @map("disconnected_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adAccounts AdAccount[]
 
   @@map("meta_connections")
+}
+
+/// A workspace's own selection lifecycle for a discovered Ad Account (meta-account-
+/// discovery.md §4) — distinct from Meta's own `account_status` (see `accountStatus` below).
+/// `DESELECTED` is a soft state, never a row deletion (BR-018/OD-3A-05) — re-selecting the
+/// same external account updates this row back to `ACTIVE` rather than creating a duplicate
+/// (meta-account-discovery.md §3's "updates the existing row... rather than creating a
+/// duplicate", applied here to selection the same way it already applies to reconnection).
+enum AdAccountSelectionStatus {
+  ACTIVE
+  DESELECTED
+}
+
+/// A workspace-authorized Meta Ad Account (meta-resource-model.md §4, meta-account-
+/// discovery.md). Discovery itself is never persisted (meta-account-discovery.md §2) — a row
+/// here exists only once a user has explicitly selected the account. Every lookup is scoped
+/// `workspace_id + external_id` (meta-resource-model.md §1-2) — the external Meta ID is never
+/// an authorization key on its own (meta-threat-model.md #7-#8).
+model AdAccount {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId      String @map("workspace_id") @db.Uuid
+  metaConnectionId String @map("meta_connection_id") @db.Uuid
+
+  /// Meta's own `act_{id}` identifier (round-trips directly into Graph API calls) — external
+  /// identity only, never an authorization key on its own (meta-resource-model.md §1).
+  externalId    String @map("external_id")
+  name          String
+  currency      String
+  timezone      String @map("timezone")
+  /// Normalized from Meta's numeric `account_status` (meta-error-model.md §1's normalization
+  /// discipline, applied here to account status rather than only to errors) — e.g. `ACTIVE`,
+  /// `DISABLED`, `CLOSED`, or `UNKNOWN` for any code this application doesn't yet recognize
+  /// (fail-safe: never crashes discovery over an unrecognized future Meta status code).
+  accountStatus String @map("account_status")
+
+  /// Denormalized Business display metadata (meta-resource-model.md §4's "business
+  /// association") — nullable: a directly-shared ad account may have no Business at all.
+  /// Never a separate `Business` table — the approved architecture does not require
+  /// persisting Business entities on their own (meta-account-discovery.md's "Do not persist
+  /// businesses automatically unless the approved data model requires it" — it does not).
+  businessExternalId String? @map("business_external_id")
+  businessName       String? @map("business_name")
+
+  status       AdAccountSelectionStatus @default(ACTIVE)
+  selectedAt   DateTime                 @default(now()) @map("selected_at")
+  deselectedAt DateTime?                @map("deselected_at")
+  /// Set only once Phase 4.1's sync worker exists (meta-sync.md §1) — this phase never writes
+  /// it, the column exists now so Phase 4.1 needs no further schema change.
+  lastSyncedAt DateTime?                @map("last_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metaConnection MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+
+  /// The mechanical tenant-isolation/deduplication rule (meta-resource-model.md §2): the same
+  /// Meta external ID can exist independently in two different workspaces without collision,
+  /// and a re-selection of an already-selected account updates this row instead of
+  /// duplicating it.
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, status])
+  @@index([metaConnectionId])
+  @@map("ad_accounts")
 }
 
 /// Minimal event envelope for webhook idempotency — identity-sync.md §2 step 3/6. Keyed by

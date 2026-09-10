@@ -1,6 +1,6 @@
 # Meta Integration Implementation Sequence
 
-**Document ID:** META-120 | Version 1.3 | Status: Owner-Approved 2026-09-10; Phase 3.1 implemented and real-UAT-verified 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1 (Implementation, complete)
+**Document ID:** META-120 | Version 1.4 | Status: Owner-Approved 2026-09-10; Phase 3.1 and Phase 3.2 (Discovery) implemented and real-UAT-verified 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2 (Implementation, complete)
 
 ## 1. Phase Numbering (owner-decided 2026-09-10, binding — supersedes this document's prior
 
@@ -81,3 +81,28 @@ real browser redirect can ever carry, contradicting the already-approved `meta-o
 design) — fixed as the minimum necessary correction, re-verified by the full test/build/lint/
 security-scan suite plus a fresh real OAuth round-trip, and documented in the same report's
 §16. Phase 3.2 may now begin.
+
+## 5. Phase 3.2 Status (2026-09-10) — naming note, then implementation status
+
+**Naming reconciliation (owner-confirmed 2026-09-10):** the governing task labeled this work
+"Phase 3.2 — Meta Business & Ad Account Discovery." Per §1's table above, that is this
+document's **Phase 3.3** — this document's own "Phase 3.2" is "Secure Token / Connection
+Lifecycle," whose one still-outstanding item is **OD-3A-08's workspace-level Meta connection
+kill switch**, not yet built. The owner reviewed this discrepancy and explicitly chose to
+proceed with Business/Ad Account discovery under the task's own "Phase 3.2" label (matching
+`phase-3-2-implementation-report.md`'s filename), rather than block on the numbering. This is
+recorded here, not silently reconciled: **the OD-3A-08 kill switch remains outstanding** and
+must land before any future phase enables production Meta mutation capability (OD-3A-08's own
+binding text — "must NOT wait," "not acceptable to defer"). It is not a blocker for the
+discovery work below, since Phase 3 still has zero mutation capability (OD-3A-09) either way.
+
+**Implementation: complete.** Business/Ad Account discovery, normalization, multi-account
+selection, deselection, and workspace-scoped persistence are implemented and tested — 39 new
+integration tests (discovery, selection, deselection, tenant isolation, concurrency, security),
+zero regressions across the full existing suite (191 integration + 69 unit + 6 E2E). Meta's
+current documentation was re-verified fresh for the discovery-specific endpoints/fields/
+pagination immediately before implementation. **Real Meta UAT is complete (2026-09-10)** —
+business discovery, ad-account discovery, selection, deselection, reselection-after-
+deselection, and tenant isolation were all verified against the real, currently-authorized
+Meta Development-mode connection and its one real ad account. See
+`phase-3-2-implementation-report.md` for full detail.

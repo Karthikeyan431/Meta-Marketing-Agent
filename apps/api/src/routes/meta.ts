@@ -3,9 +3,16 @@ import {
   metaOAuthInitiationResponseSchema,
   listMetaConnectionsResponseSchema,
   disconnectMetaConnectionResponseSchema,
+  listMetaBusinessesResponseSchema,
+  listMetaAdAccountDiscoveryResponseSchema,
+  listAdAccountsResponseSchema,
+  selectAdAccountsRequestSchema,
+  selectAdAccountsResponseSchema,
+  deselectAdAccountResponseSchema,
   successEnvelope,
   errorEnvelope,
   type MetaConnectionSummary,
+  type AdAccountSummary,
 } from "@ai-marketing-manager/contracts";
 import {
   getPrismaClient,
@@ -13,10 +20,18 @@ import {
   findMetaConnectionByWorkspace,
   upsertMetaConnection,
   disconnectMetaConnection,
+  listAdAccountsByWorkspace,
+  findAdAccountByWorkspace,
+  selectAdAccounts,
+  deselectAdAccount,
+  decryptMetaConnectionCredential,
   recordAuditEvent,
   roleHasPermission,
   MetaConnectionNotFoundError,
+  AdAccountNotFoundError,
+  AdAccountNotDiscoverableError,
   type MetaConnection,
+  type AdAccount,
   type RoleName,
 } from "@ai-marketing-manager/domain";
 import {
@@ -24,12 +39,15 @@ import {
   requireWorkspaceMembership,
   requirePermission,
 } from "../plugins/authorization.js";
+import { validateBody } from "../plugins/validation.js";
 import {
   buildMetaAuthorizationUrl,
   exchangeCodeForToken,
   exchangeForLongLivedToken,
   validateMetaToken,
   getMetaIdentity,
+  listBusinesses,
+  listAdAccounts,
   MetaApiError,
 } from "../plugins/meta-client.js";
 import { createOAuthState, consumeOAuthState } from "../plugins/meta-oauth-state.js";
@@ -49,6 +67,23 @@ function toMetaConnectionSummary(connection: MetaConnection): MetaConnectionSumm
     createdAt: connection.createdAt.toISOString(),
     updatedAt: connection.updatedAt.toISOString(),
     disconnectedAt: connection.disconnectedAt?.toISOString() ?? null,
+  };
+}
+
+function toAdAccountSummary(account: AdAccount): AdAccountSummary {
+  return {
+    id: account.id,
+    externalId: account.externalId,
+    name: account.name,
+    currency: account.currency,
+    timezone: account.timezone,
+    accountStatus: account.accountStatus,
+    businessExternalId: account.businessExternalId,
+    businessName: account.businessName,
+    status: account.status,
+    selectedAt: account.selectedAt.toISOString(),
+    deselectedAt: account.deselectedAt?.toISOString() ?? null,
+    lastSyncedAt: account.lastSyncedAt?.toISOString() ?? null,
   };
 }
 
@@ -103,12 +138,76 @@ function classifyMetaApiFailure(error: unknown): string {
   return "unknown_provider_failure";
 }
 
+type DiscoveryPrereqFailure =
+  { kind: "no_connection" } | { kind: "connection_not_usable"; status: string };
+
+/** Resolves the workspace's own `MetaConnection` and decrypts its credential for a live
+ *  discovery call — never accepts a client-supplied connection reference or token
+ *  (meta-account-discovery.md §5, meta-threat-model.md #7). A missing or non-`CONNECTED`
+ *  connection is reported, never silently substituted or retried against a stale token. */
+async function resolveDiscoveryConnection(
+  prisma: ReturnType<typeof getPrismaClient>,
+  workspaceId: string,
+  encryptionKey: string,
+): Promise<{ connection: MetaConnection; accessToken: string } | DiscoveryPrereqFailure> {
+  const connection = await findMetaConnectionByWorkspace(prisma, workspaceId);
+  if (!connection) return { kind: "no_connection" };
+  if (connection.status !== "CONNECTED") {
+    return { kind: "connection_not_usable", status: connection.status };
+  }
+  const accessToken = decryptMetaConnectionCredential(connection, encryptionKey);
+  return { connection, accessToken };
+}
+
+function sendDiscoveryPrereqFailure(
+  reply: { code: (n: number) => { send: (b: unknown) => void } },
+  requestId: string,
+  failure: DiscoveryPrereqFailure,
+) {
+  if (failure.kind === "no_connection") {
+    reply
+      .code(404)
+      .send(errorEnvelope("NOT_FOUND", "No Meta connection exists for this workspace.", requestId));
+    return;
+  }
+  reply
+    .code(409)
+    .send(
+      errorEnvelope(
+        "CONFLICT",
+        `The Meta connection is not currently usable (status: ${failure.status}).`,
+        requestId,
+      ),
+    );
+}
+
+/** Maps a normalized Meta failure reason (`classifyMetaApiFailure`) to the client-facing
+ *  status/envelope (meta-error-model.md §5 — never the raw Meta error body). */
+function sendMetaApiFailure(
+  reply: { code: (n: number) => { send: (b: unknown) => void } },
+  requestId: string,
+  reason: string,
+) {
+  if (reason === "rate_limited") {
+    reply
+      .code(429)
+      .send(
+        errorEnvelope("RATE_LIMITED", "Meta rate limit reached. Try again shortly.", requestId),
+      );
+    return;
+  }
+  reply
+    .code(502)
+    .send(errorEnvelope("PROVIDER_UNAVAILABLE", "The Meta discovery request failed.", requestId));
+}
+
 /**
- * Meta OAuth & connection lifecycle (Phase 3.1, meta-api-contracts.md §1–2). Every route
+ * Meta OAuth & connection lifecycle (Phase 3.1) + Business/Ad Account discovery and
+ * selection (Phase 3.2, meta-api-contracts.md §1–2, meta-account-discovery.md). Every route
  * reuses the existing `requireAuth → requireWorkspaceMembership → requirePermission →
- * requireResourceAccess` chain unchanged — no competing authorization path. Only Phase 3.1
- * scope: OAuth initiation/callback, connection list/reconnect/disconnect. No campaign,
- * ad-account discovery, Insights, or webhook code (Phase 3.3+/Phase 4/Phase 5).
+ * requireResourceAccess` chain unchanged — no competing authorization path. No campaign
+ * sync, Insights, or webhook code (Phase 4/Phase 5) — see this file's own discovery routes'
+ * doc comments for the exact Phase 3.2 boundary.
  */
 export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOptions) {
   app.post<{ Params: { id: string } }>("/workspaces/:id/meta/connect", async (request, reply) => {
@@ -456,4 +555,292 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
 
     redirectResult("success");
   });
+
+  /**
+   * Business discovery (Phase 3.2, meta-account-discovery.md §2/§5). A live, ephemeral read
+   * through the workspace's own authorized connection — never persisted (only a selected Ad
+   * Account is ever written to the database). `meta_connection.read` (already seeded,
+   * ALL_ROLES) — reuses the exact permission `meta-account-discovery.md` §5 specifies for
+   * every `GET`-shaped discovery call, no new permission introduced.
+   */
+  app.get<{ Params: { id: string } }>("/workspaces/:id/meta/businesses", async (request, reply) => {
+    const user = await requireAuth(request);
+    const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+    requirePermission(membership, "meta_connection.read");
+
+    const config = metaOAuthConfig(opts.env);
+    if (!config) return sendNotConfigured(reply, request.requestId);
+
+    const prisma = getPrismaClient();
+    const resolved = await resolveDiscoveryConnection(prisma, workspace.id, config.encryptionKey);
+    if ("kind" in resolved) {
+      sendDiscoveryPrereqFailure(reply, request.requestId, resolved);
+      return;
+    }
+
+    try {
+      const businesses = await listBusinesses({
+        accessToken: resolved.accessToken,
+        apiVersion: config.apiVersion,
+      });
+      const body = listMetaBusinessesResponseSchema.parse({
+        businesses: businesses.map((b) => ({
+          id: b.id,
+          name: b.name,
+          verificationStatus: b.verificationStatus,
+        })),
+      });
+      reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+    } catch (error) {
+      const reason = classifyMetaApiFailure(error);
+      await recordAuditEvent(prisma, {
+        workspaceId: workspace.id,
+        actorType: "USER",
+        actorId: user.id,
+        eventType: "meta_business_discovery.failed",
+        resourceType: "meta_connection",
+        resourceId: resolved.connection.id,
+        action: "discover_businesses",
+        outcome: "FAILURE",
+        correlationId: request.requestId,
+        metadata: { reason },
+      });
+      sendMetaApiFailure(reply, request.requestId, reason);
+    }
+  });
+
+  /**
+   * Ad Account discovery (Phase 3.2, meta-account-discovery.md §2/§5) — same live/ephemeral
+   * shape as business discovery above. `alreadySelected` is computed against this
+   * workspace's own persisted `AdAccount` rows so the client can render current selection
+   * state without a second round trip.
+   */
+  app.get<{ Params: { id: string } }>(
+    "/workspaces/:id/meta/ad-accounts",
+    async (request, reply) => {
+      const user = await requireAuth(request);
+      const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+      requirePermission(membership, "meta_connection.read");
+
+      const config = metaOAuthConfig(opts.env);
+      if (!config) return sendNotConfigured(reply, request.requestId);
+
+      const prisma = getPrismaClient();
+      const resolved = await resolveDiscoveryConnection(prisma, workspace.id, config.encryptionKey);
+      if ("kind" in resolved) {
+        sendDiscoveryPrereqFailure(reply, request.requestId, resolved);
+        return;
+      }
+
+      try {
+        const [discovered, selected] = await Promise.all([
+          listAdAccounts({ accessToken: resolved.accessToken, apiVersion: config.apiVersion }),
+          listAdAccountsByWorkspace(prisma, workspace.id),
+        ]);
+        const selectedExternalIds = new Set(selected.map((a) => a.externalId));
+        const body = listMetaAdAccountDiscoveryResponseSchema.parse({
+          adAccounts: discovered.map((account) => ({
+            externalId: account.id,
+            name: account.name,
+            currency: account.currency,
+            timezone: account.timezoneName,
+            accountStatus: account.accountStatus,
+            businessExternalId: account.business?.id ?? null,
+            businessName: account.business?.name ?? null,
+            alreadySelected: selectedExternalIds.has(account.id),
+          })),
+        });
+        reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+      } catch (error) {
+        const reason = classifyMetaApiFailure(error);
+        await recordAuditEvent(prisma, {
+          workspaceId: workspace.id,
+          actorType: "USER",
+          actorId: user.id,
+          eventType: "meta_ad_account_discovery.failed",
+          resourceType: "meta_connection",
+          resourceId: resolved.connection.id,
+          action: "discover_ad_accounts",
+          outcome: "FAILURE",
+          correlationId: request.requestId,
+          metadata: { reason },
+        });
+        sendMetaApiFailure(reply, request.requestId, reason);
+      }
+    },
+  );
+
+  /**
+   * Ad Account selection (Phase 3.2, meta-account-discovery.md §4-5). A mutation — creating/
+   * reactivating local `AdAccount` row(s) — so it requires `meta_connection.connect`
+   * (OWNER/ADMIN only), exactly as `meta-account-discovery.md` §5 specifies ("part of the
+   * connection-establishment flow, not a separate lesser-privileged action"; this does not
+   * introduce a new permission). Every requested external ID is verified against a FRESH
+   * discovery call through this workspace's own connection before anything is persisted
+   * (meta-threat-model.md #7's malicious/foreign external ID defense) — client-supplied
+   * name/currency/etc. is never trusted, only the external ID as an index into that fresh,
+   * server-fetched result set.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/workspaces/:id/meta/ad-accounts/select",
+    async (request, reply) => {
+      const user = await requireAuth(request);
+      const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+      requirePermission(membership, "meta_connection.connect");
+
+      const body = await validateBody(selectAdAccountsRequestSchema, request, reply);
+      if (!body) return;
+
+      const config = metaOAuthConfig(opts.env);
+      if (!config) return sendNotConfigured(reply, request.requestId);
+
+      const prisma = getPrismaClient();
+      const resolved = await resolveDiscoveryConnection(prisma, workspace.id, config.encryptionKey);
+      if ("kind" in resolved) {
+        sendDiscoveryPrereqFailure(reply, request.requestId, resolved);
+        return;
+      }
+
+      let discovered;
+      try {
+        discovered = await listAdAccounts({
+          accessToken: resolved.accessToken,
+          apiVersion: config.apiVersion,
+        });
+      } catch (error) {
+        const reason = classifyMetaApiFailure(error);
+        await recordAuditEvent(prisma, {
+          workspaceId: workspace.id,
+          actorType: "USER",
+          actorId: user.id,
+          eventType: "meta_ad_account_discovery.failed",
+          resourceType: "meta_connection",
+          resourceId: resolved.connection.id,
+          action: "discover_ad_accounts",
+          outcome: "FAILURE",
+          correlationId: request.requestId,
+          metadata: { reason },
+        });
+        sendMetaApiFailure(reply, request.requestId, reason);
+        return;
+      }
+
+      try {
+        const selected = await selectAdAccounts(prisma, {
+          workspaceId: workspace.id,
+          metaConnectionId: resolved.connection.id,
+          actorUserId: user.id,
+          correlationId: request.requestId,
+          requestedExternalIds: body.externalIds,
+          discovered: discovered.map((account) => ({
+            externalId: account.id,
+            name: account.name,
+            currency: account.currency,
+            timezone: account.timezoneName,
+            accountStatus: account.accountStatus,
+            businessExternalId: account.business?.id ?? null,
+            businessName: account.business?.name ?? null,
+          })),
+        });
+        const responseBody = selectAdAccountsResponseSchema.parse({
+          adAccounts: selected.map(toAdAccountSummary),
+        });
+        reply.code(200).send(successEnvelope(responseBody, { requestId: request.requestId }));
+      } catch (error) {
+        if (error instanceof AdAccountNotDiscoverableError) {
+          await recordAuditEvent(prisma, {
+            workspaceId: workspace.id,
+            actorType: "USER",
+            actorId: user.id,
+            eventType: "ad_account.selection_denied",
+            resourceType: "meta_connection",
+            resourceId: resolved.connection.id,
+            action: "select",
+            outcome: "FAILURE",
+            correlationId: request.requestId,
+            metadata: { reason: "not_discoverable", externalIds: error.externalIds },
+          });
+          reply.code(422).send(errorEnvelope("VALIDATION_ERROR", error.message, request.requestId));
+          return;
+        }
+        throw error;
+      }
+    },
+  );
+
+  /**
+   * `GET /workspaces/:id/ad-accounts` (meta-api-contracts.md §1 — already-approved naming,
+   * unprefixed by `/meta/`, distinct from the live discovery reads above). The persisted,
+   * currently-`ACTIVE` selected accounts only — a pure local read, no live Meta call, no
+   * connection required to be `CONNECTED`.
+   */
+  app.get<{ Params: { id: string } }>("/workspaces/:id/ad-accounts", async (request, reply) => {
+    const user = await requireAuth(request);
+    const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+    requirePermission(membership, "meta_connection.read");
+
+    const prisma = getPrismaClient();
+    const accounts = await listAdAccountsByWorkspace(prisma, workspace.id);
+    const body = listAdAccountsResponseSchema.parse({
+      adAccounts: accounts.map(toAdAccountSummary),
+    });
+    reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+  });
+
+  /**
+   * Ad Account deselection (meta-account-discovery.md §4) — the inverse of selection, so it
+   * reuses `meta_connection.disconnect` (OWNER/ADMIN only), the same permission this file
+   * already uses for the analogous connection-level operation. Marks the row `DESELECTED`,
+   * never deletes it (BR-018/OD-3A-05). Resource-scoped via `findAdAccountByWorkspace`'s
+   * `id` + `workspaceId` query (authorization.md §2) — an account ID from another workspace
+   * is indistinguishable from one that does not exist (404, never 403).
+   */
+  app.delete<{ Params: { id: string; adAccountId: string } }>(
+    "/workspaces/:id/ad-accounts/:adAccountId",
+    async (request, reply) => {
+      const user = await requireAuth(request);
+      const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+      requirePermission(membership, "meta_connection.disconnect");
+
+      const prisma = getPrismaClient();
+      const existing = await findAdAccountByWorkspace(
+        prisma,
+        workspace.id,
+        request.params.adAccountId,
+      );
+      if (!existing) {
+        reply.code(404).send(errorEnvelope("NOT_FOUND", "Resource not found.", request.requestId));
+        return;
+      }
+      if (existing.status === "DESELECTED") {
+        reply
+          .code(409)
+          .send(
+            errorEnvelope("CONFLICT", "This ad account is already deselected.", request.requestId),
+          );
+        return;
+      }
+
+      try {
+        const deselected = await deselectAdAccount(prisma, {
+          workspaceId: workspace.id,
+          adAccountId: existing.id,
+          actorUserId: user.id,
+          correlationId: request.requestId,
+        });
+        const body = deselectAdAccountResponseSchema.parse({
+          adAccount: toAdAccountSummary(deselected),
+        });
+        reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+      } catch (error) {
+        if (error instanceof AdAccountNotFoundError) {
+          reply
+            .code(404)
+            .send(errorEnvelope("NOT_FOUND", "Resource not found.", request.requestId));
+          return;
+        }
+        throw error;
+      }
+    },
+  );
 }

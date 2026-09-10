@@ -38,4 +38,6 @@ export type {
   WebhookEventStatus,
   MetaConnection,
   MetaConnectionStatus,
+  AdAccount,
+  AdAccountSelectionStatus,
 } from "@prisma/client";

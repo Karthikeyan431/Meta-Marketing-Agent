@@ -1,11 +1,24 @@
 # Meta API Adapter Contract
 
-**Document ID:** META-109 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-109 | Version 1.1 | Status: `listBusinesses`/`listAdAccounts` implemented 2026-09-10 (Phase 3.2, extending §1's originally-reconciled interface); all other methods remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.2 (discovery methods, complete)
 
 Consolidates `ai-marketing-manager-gate-7-api-docs/docs/08-api/META_API_ADAPTER.md` (API-009)
 and `ai-marketing-manager-gate-2-docs/docs/03-architecture/INTEGRATION_ARCHITECTURE.md`
-(ARCH-007). **No method in this contract is implemented by this phase** — this is the
+(ARCH-007). **No method in this contract was implemented by Phase 3A** — this is the
 interface Phase 3.1+ implements against.
+
+## 0. Implementation Status (Phase 3.2, 2026-09-10)
+
+`apps/api/src/plugins/meta-client.ts` implements `listBusinesses(params)`/`listAdAccounts
+(params)` — a deliberate, documented extension of §1's originally-reconciled
+`getBusiness(connectionRef, externalBusinessId)` (a single-object lookup by an already-known
+ID). Discovery needs a LIST of businesses/accounts the token can access, which that
+single-lookup shape cannot express; `listBusinesses`/`listAdAccounts` fill that gap. This is a
+Phase 3.2 implementation decision, not an architecture gap — the non-negotiable boundary (§2),
+pagination (§4, via Meta's `paging.next`, bounded to `MAX_DISCOVERY_PAGES = 20`), and
+provider-response normalization (§2) are all upheld exactly as specified. `getBusiness` (a
+single-ID lookup), `getAdAccount`, and every campaign/ad-set/ad/insights/mutation method
+remain unimplemented (Phase 4.1+ scope).
 
 ## 1. Interface (reconciled — API-009's list vs. the governing task's list)
 

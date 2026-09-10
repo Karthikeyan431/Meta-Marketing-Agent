@@ -1,11 +1,12 @@
 # Meta API Contracts
 
-**Document ID:** META-116 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-116 | Version 1.1 | Status: Connection-lifecycle rows implemented (Phase 3.1); discovery/ad-account rows implemented 2026-09-10 (Phase 3.2); sync/webhook rows remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2 (Implementation, complete for their own rows)
 
 Consolidates the governing task's illustrative endpoint list against the pre-existing
 `ai-marketing-manager-gate-7-api-docs/docs/08-api/API_ENDPOINT_CATALOG.md` (API-002)'s
-already-drafted Meta section and `AUTHORIZATION_MODEL.md` (API-006). **No route is
-implemented by this document.**
+already-drafted Meta section and `AUTHORIZATION_MODEL.md` (API-006). **No route was
+implemented by Phase 3A** — see `phase-3-1-implementation-report.md`/`phase-3-2-
+implementation-report.md` for what each later phase actually shipped.
 
 ## 1. Endpoint Surface (reconciled)
 
@@ -27,11 +28,28 @@ GET    /meta/oauth/callback                                    (no requireAuth c
 POST   /workspaces/:id/meta/connections/:connectionId/reconnect
 DELETE /workspaces/:id/meta/connections/:connectionId
 POST   /workspaces/:id/meta/sync
+GET    /workspaces/:id/meta/businesses                         (live discovery, Phase 3.2 — added, not in this list originally)
+GET    /workspaces/:id/meta/ad-accounts                        (live discovery, Phase 3.2 — distinct from the persisted list below)
+POST   /workspaces/:id/meta/ad-accounts/select                 (Phase 3.2)
 GET    /workspaces/:id/ad-accounts
 GET    /workspaces/:id/ad-accounts/:adAccountId
+DELETE /workspaces/:id/ad-accounts/:adAccountId                (deselection, Phase 3.2 — extends this already-approved resource path with a new verb)
 GET    /webhooks/meta                                          (verification handshake)
 POST   /webhooks/meta                                           (event delivery — meta-webhooks.md)
 ```
+
+**Phase 3.2 naming reconciliation** (recorded here since this document's §1 predates
+discovery): the governing Phase 3.2 task brief's own illustrative list nested ad-account
+discovery under `/meta/` (`GET /workspaces/:id/meta/ad-accounts`, `POST .../meta/ad-accounts/
+select`, `DELETE .../meta/ad-accounts/:id`) throughout, while this document's original §1
+already specified persisted-resource reads at the unprefixed `/workspaces/:id/ad-accounts`
+path. Both are correct for what they represent and neither is dropped: the `/meta/`-prefixed
+routes are live, ephemeral discovery reads and the selection mutation (matching this
+codebase's existing convention that `/meta/*` is for connection/provider-lifecycle
+operations); the unprefixed `/workspaces/:id/ad-accounts` routes are the persisted resource
+(list + deselect), exactly as this document already specified for the `GET` form — `DELETE`
+was added to the same already-approved path for symmetry, rather than introducing a second,
+`/meta/`-prefixed path for the same resource.
 
 **Known pre-existing discrepancy, flagged, not resolved by this phase**: API-002 prefixes its
 whole catalog with `/api/v1`; this project's actually-implemented routes
@@ -55,6 +73,10 @@ authorization.ts`, no new primitive)
 | `DELETE /workspaces/:id/meta/connections/:connectionId`         | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.disconnect) → requireResourceAccess(connectionId, workspace.id)`                                                                                                                                        |
 | `POST /workspaces/:id/meta/sync`                                | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)` (triggering a sync is a read-adjacent operation on already-authorized data, not a Meta-side mutation — consistent with `meta_connection.read`'s existing "worker-invocable: yes" classification) |
 | `GET /workspaces/:id/ad-accounts[/{id}]`                        | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read) → requireResourceAccess` (for the single-resource form)                                                                                                                                           |
+| `GET /workspaces/:id/meta/businesses`                           | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)` (Phase 3.2 — live discovery read)                                                                                                                                                                |
+| `GET /workspaces/:id/meta/ad-accounts`                          | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)` (Phase 3.2 — live discovery read)                                                                                                                                                                |
+| `POST /workspaces/:id/meta/ad-accounts/select`                  | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.connect)` (Phase 3.2 — a mutation, reuses `meta_connection.connect` per `meta-account-discovery.md` §5, no new permission)                                                                              |
+| `DELETE /workspaces/:id/ad-accounts/:adAccountId`               | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.disconnect) → requireResourceAccess(adAccountId, workspace.id)` (Phase 3.2 — deselection, the inverse of selection, reuses `meta_connection.disconnect` by the same "no new permission" reasoning)      |
 | `GET`/`POST /webhooks/meta`                                     | No `requireAuth()` — authenticated by Meta's own signature (`meta-webhooks.md` §1–2), identical exception pattern to `POST /webhooks/clerk`                                                                                                                                           |
 
 Every endpoint above reuses `apps/api/src/plugins/authorization.ts`'s already-shipped

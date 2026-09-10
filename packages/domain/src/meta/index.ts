@@ -5,7 +5,12 @@ export {
   type EncryptedCredential,
 } from "./crypto.js";
 
-export { MetaConnectionNotFoundError, MetaConnectionAlreadyActiveError } from "./errors.js";
+export {
+  MetaConnectionNotFoundError,
+  MetaConnectionAlreadyActiveError,
+  AdAccountNotFoundError,
+  AdAccountNotDiscoverableError,
+} from "./errors.js";
 
 export {
   findMetaConnectionByWorkspace,
@@ -15,3 +20,13 @@ export {
   type UpsertMetaConnectionInput,
   type DisconnectMetaConnectionInput,
 } from "./connections.js";
+
+export {
+  listAdAccountsByWorkspace,
+  findAdAccountByWorkspace,
+  selectAdAccounts,
+  deselectAdAccount,
+  type DiscoveredAdAccount,
+  type SelectAdAccountsInput,
+  type DeselectAdAccountInput,
+} from "./ad-accounts.js";
