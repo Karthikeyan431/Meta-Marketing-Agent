@@ -302,7 +302,8 @@ against the actual commit before pushing (see §18).
 
 ## 18. Commit SHA
 
-`<recorded immediately after commit, below>`
+`966f0193c942ed68eb892a74590c897cf8b483a4` — **CI green**, all 22 stages passed on the first
+push: https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34456840038
 
 ## 19. Known Limitations
 
