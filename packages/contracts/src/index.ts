@@ -34,6 +34,9 @@ export {
   removeMembershipResponseSchema,
   transferOwnershipRequestSchema,
   transferOwnershipResponseSchema,
+  inviteMemberRequestSchema,
+  invitationStatusSchema,
+  inviteMemberResponseSchema,
   type RoleContract,
   type WorkspaceStatusContract,
   type WorkspaceSummary,
@@ -47,4 +50,7 @@ export {
   type RemoveMembershipResponse,
   type TransferOwnershipRequest,
   type TransferOwnershipResponse,
+  type InviteMemberRequest,
+  type InvitationStatusContract,
+  type InviteMemberResponse,
 } from "./identity.js";

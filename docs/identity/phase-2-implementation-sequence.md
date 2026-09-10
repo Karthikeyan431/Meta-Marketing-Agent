@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.7 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended; Phase 2.5 §4 steps 2–3 implemented) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.8 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended; Phase 2.5 §4 steps 2–3 implemented, invite route implemented) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -42,9 +42,21 @@ Phase 2.4 execution ("do not add broad CRUD"). Implemented `PATCH`/`DELETE
 wrappers around the existing `changeMembershipRole()`/`removeMembership()`/
 `transferOwnership()` domain functions — no authorization logic duplicated. 19 new
 integration tests close all 9 `REQUIRED (Phase 2.4)` test-matrix items at the route level.
-`POST .../members/invite` remains unimplemented — blocked on an owner decision about the
+`POST .../members/invite` remained unimplemented pending an owner decision about the
 invitation mechanism (Clerk Organization Invitation API vs. an alternative); see
 `phase-2-5-implementation-report.md` §3/§13.
+
+**Phase 2.5 addendum (2026-09-10, same day):** owner selected Clerk's Organization
+Invitation API. Implemented `POST /workspaces/:id/members/invite` — request body is
+`{ emailAddress }` only, no role field; creates **no** local `workspace_membership` row.
+The invited person's application role question was resolved without inventing a new
+mechanism: `upsertMembershipFromSync()` already defaults every newly-synced membership to
+VIEWER regardless of how it was created (Phase 2.3, unchanged), so the invitation carries no
+role and promotion happens via the already-implemented role-change route after acceptance.
+Clerk's mandatory `role` parameter is fixed to `org:member` (non-authoritative, per
+`clerk-integration.md`'s existing finding that Clerk org roles are unused for this
+project's authorization) — never mapped from our RBAC. 11 new integration tests. See
+`phase-2-5-implementation-report.md` §14.
 
 **Phase 2.4 amendment (2026-09-10, same day):** owner issued superseding decisions for
 OD-2.4A-01 (system actor identity: DEFERRED → APPROVED) and OD-2.4A-03 (`campaign.pause`

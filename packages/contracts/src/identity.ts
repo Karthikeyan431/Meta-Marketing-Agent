@@ -87,3 +87,30 @@ export const transferOwnershipResponseSchema = z.object({
   to: membershipSummarySchema,
 });
 export type TransferOwnershipResponse = z.infer<typeof transferOwnershipResponseSchema>;
+
+/**
+ * Invitation via Clerk's Organization Invitation API (Phase 2.5 invite route). Email only —
+ * no application role is accepted or carried through the invitation. A newly-synced
+ * membership always starts at VIEWER regardless of how the Clerk membership was created
+ * (`upsertMembershipFromSync()`, unchanged since Phase 2.3); promotion is a separate,
+ * already-authorized `PATCH /workspaces/:id/members/:membershipId` call made after the
+ * membership exists, never something an invitation can pre-grant.
+ */
+export const inviteMemberRequestSchema = z.object({
+  emailAddress: z.string().email(),
+});
+export type InviteMemberRequest = z.infer<typeof inviteMemberRequestSchema>;
+
+export const invitationStatusSchema = z.enum(["pending", "accepted", "revoked", "expired"]);
+export type InvitationStatusContract = z.infer<typeof invitationStatusSchema>;
+
+/** Deliberately excludes Clerk's invitation `url` (an accept-as-this-email credential) and
+ *  any metadata — never returned, logged, or persisted (Hard Restriction #15). */
+export const inviteMemberResponseSchema = z.object({
+  invitation: z.object({
+    id: z.string(),
+    emailAddress: z.string(),
+    status: invitationStatusSchema,
+  }),
+});
+export type InviteMemberResponse = z.infer<typeof inviteMemberResponseSchema>;

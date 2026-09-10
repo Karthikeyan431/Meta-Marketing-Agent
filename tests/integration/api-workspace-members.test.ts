@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ClerkAPIResponseError } from "@clerk/backend/errors";
 import { createLogger } from "@ai-marketing-manager/config";
 import { loadApiEnv } from "@ai-marketing-manager/api/env";
 import { buildApp, type App } from "@ai-marketing-manager/api/app";
@@ -13,6 +14,7 @@ import {
 
 vi.mock("@clerk/backend", () => ({
   verifyToken: vi.fn(),
+  createClerkClient: vi.fn(),
 }));
 
 const TEST_SECRET_KEY = "test-fixture-secret-not-a-real-clerk-key";
@@ -80,10 +82,16 @@ async function addMember(
 describe("Workspace member-management API (Phase 2.5)", () => {
   let app: App;
   let verifyToken: ReturnType<typeof vi.fn>;
+  const createOrganizationInvitation = vi.fn();
 
   beforeAll(async () => {
-    ({ verifyToken } = (await import("@clerk/backend")) as unknown as {
+    const clerkBackendMock = (await import("@clerk/backend")) as unknown as {
       verifyToken: ReturnType<typeof vi.fn>;
+      createClerkClient: ReturnType<typeof vi.fn>;
+    };
+    ({ verifyToken } = clerkBackendMock);
+    clerkBackendMock.createClerkClient.mockReturnValue({
+      organizations: { createOrganizationInvitation },
     });
     const env = loadApiEnv({ ...process.env, CLERK_SECRET_KEY: TEST_SECRET_KEY });
     const logger = createLogger({ serviceName: "test-api-workspace-members", level: "silent" });
@@ -93,6 +101,7 @@ describe("Workspace member-management API (Phase 2.5)", () => {
 
   afterEach(() => {
     verifyToken.mockReset();
+    createOrganizationInvitation.mockReset();
   });
 
   afterAll(async () => {
@@ -414,6 +423,246 @@ describe("Workspace member-management API (Phase 2.5)", () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe("POST /workspaces/:id/members/invite", () => {
+    it("OWNER successfully invites a new member by email", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: "https://clerk.example.com/accept?__clerk_ticket=super-secret-not-a-real-token",
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json().data.invitation;
+      expect(body).toEqual({
+        id: expect.any(String),
+        emailAddress: "invitee@example.com",
+        status: "pending",
+      });
+      expect(createOrganizationInvitation).toHaveBeenCalledTimes(1);
+    });
+
+    it("no session returns 401", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${randomUUID()}/members/invite`,
+        payload: { emailAddress: "invitee@example.com" },
+      });
+      expect(response.statusCode).toBe(401);
+      expect(createOrganizationInvitation).not.toHaveBeenCalled();
+    });
+
+    it("a member without members.invite permission (VIEWER) is rejected with 403 before Clerk is ever called", async () => {
+      const { workspace } = await seedWorkspaceWithOwner();
+      const viewer = await addMember(workspace.id);
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(viewer.clerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe("AUTHORIZATION_ERROR");
+      expect(createOrganizationInvitation).not.toHaveBeenCalled();
+    });
+
+    it("[cross-workspace] a non-member cannot invite into a workspace they don't belong to", async () => {
+      const attackerClerkUserId = testClerkUserId();
+      const { workspace: victimWorkspace } = await seedWorkspaceWithOwner("Victim");
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${victimWorkspace.id}/members/invite`,
+        headers: await authHeaders(attackerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(createOrganizationInvitation).not.toHaveBeenCalled();
+    });
+
+    it("[spoof] the Clerk organizationId always comes from the server-resolved Workspace row, never any client-suppliable field", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: null,
+      });
+
+      await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        // extra client-supplied fields the schema strips — organizationId/workspaceId
+        // spoof attempts, ignored entirely; only :id (server-resolved) and emailAddress
+        // (validated) are ever used.
+        payload: {
+          emailAddress: "invitee@example.com",
+          organizationId: "org_attacker_controlled",
+          workspaceId: randomUUID(),
+        },
+      });
+
+      expect(createOrganizationInvitation).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: workspace.clerkOrganizationId }),
+      );
+    });
+
+    it("[no role escalation] the Clerk role passed is always the fixed non-authoritative value, never client-suppliable, never OWNER-equivalent", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: null,
+      });
+
+      await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com", role: "OWNER" },
+      });
+
+      const call = createOrganizationInvitation.mock.calls[0]?.[0];
+      expect(call.role).toBe("org:member");
+      expect(call.role).not.toMatch(/admin|owner/i);
+    });
+
+    it("[Clerk 4xx failure] a duplicate/already-invited response from Clerk maps to 409 CONFLICT, not 500", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockRejectedValueOnce(
+        new ClerkAPIResponseError("Invitation already exists", {
+          data: [{ code: "duplicate_record", message: "already invited" }],
+          status: 422,
+        }),
+      );
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("CONFLICT");
+    });
+
+    it("[repeated invitation] inviting the same email twice is safe — second call also 409, no crash, no duplicate local state", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: null,
+      });
+      createOrganizationInvitation.mockRejectedValueOnce(
+        new ClerkAPIResponseError("Invitation already exists", {
+          data: [{ code: "duplicate_record", message: "already invited" }],
+          status: 422,
+        }),
+      );
+
+      const first = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(first.statusCode).toBe(201);
+      expect(second.statusCode).toBe(409);
+    });
+
+    it("[Clerk unexpected failure] a non-API-response error (network/outage) maps to 503 PROVIDER_UNAVAILABLE", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockRejectedValueOnce(new Error("ECONNRESET"));
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("PROVIDER_UNAVAILABLE");
+    });
+
+    it("a successful invitation creates NO local workspace_membership row for the invited email", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      const beforeCount = await prisma.workspaceMembership.count({
+        where: { workspaceId: workspace.id },
+      });
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: null,
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const afterCount = await prisma.workspaceMembership.count({
+        where: { workspaceId: workspace.id },
+      });
+      expect(afterCount).toBe(beforeCount); // unchanged — only the sync pipeline creates memberships
+    });
+
+    it("the response never includes Clerk's invitation URL or any token-shaped field", async () => {
+      const { workspace, ownerClerkUserId } = await seedWorkspaceWithOwner();
+      createOrganizationInvitation.mockResolvedValueOnce({
+        id: `orginv_${randomUUID()}`,
+        emailAddress: "invitee@example.com",
+        status: "pending",
+        url: "https://clerk.example.com/accept?__clerk_ticket=super-secret-not-a-real-token",
+        publicMetadata: {},
+        privateMetadata: {},
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/workspaces/${workspace.id}/members/invite`,
+        headers: await authHeaders(ownerClerkUserId),
+        payload: { emailAddress: "invitee@example.com" },
+      });
+
+      const raw = response.body;
+      expect(raw).not.toContain("clerk_ticket");
+      expect(raw).not.toContain("url");
+      expect(raw).not.toContain("Metadata");
+      expect(Object.keys(response.json().data.invitation).sort()).toEqual([
+        "emailAddress",
+        "id",
+        "status",
+      ]);
     });
   });
 });

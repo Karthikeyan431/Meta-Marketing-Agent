@@ -61,7 +61,7 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(healthRoute);
   await app.register(readyRoute, { env });
   await app.register(meRoute);
-  await app.register(workspacesRoute);
+  await app.register(workspacesRoute, { env });
   await app.register(webhooksClerkRoute, { env });
 
   return app;

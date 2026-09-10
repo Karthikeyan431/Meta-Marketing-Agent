@@ -1,6 +1,6 @@
 # Phase 2.5 Implementation Report — Member-Management API Surface
 
-**Document ID:** IDENT-024 | Version 1.0 | Status: Complete | Phase: 2.5 (Implementation)
+**Document ID:** IDENT-024 | Version 1.1 | Status: Complete (invite route implemented, §14) | Phase: 2.5 (Implementation)
 
 ## 1. Baseline
 
@@ -183,21 +183,21 @@ https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34467677861
 
 ## 12. Phase 2.5 Gate Status
 
-| Item                                                            | Status                                  |
-| --------------------------------------------------------------- | --------------------------------------- |
-| Phase 2.5 scope confirmed with owner (no corpus spec existed)   | PASS                                    |
-| Member-management routes (PATCH/DELETE) implemented             | PASS                                    |
-| Ownership-transfer route implemented                            | PASS                                    |
-| Existing authorization primitives reused, none duplicated       | PASS                                    |
-| Fail-closed behavior preserved                                  | PASS                                    |
-| No later-phase functionality implemented                        | PASS                                    |
-| 9 REQUIRED (Phase 2.4) test-matrix items covered at route level | PASS                                    |
-| Full regression suite green (98/98 integration, 62/62 unit)     | PASS                                    |
-| Lint/format/typecheck/builds/E2E/audit/migration-status clean   | PASS                                    |
-| No unrelated changes                                            | PASS                                    |
-| Documentation updated                                           | PASS                                    |
-| CI green                                                        | PASS — run 34467677861                  |
-| `members/invite` route                                          | Blocked — owner decision needed, see §3 |
+| Item                                                            | Status                      |
+| --------------------------------------------------------------- | --------------------------- |
+| Phase 2.5 scope confirmed with owner (no corpus spec existed)   | PASS                        |
+| Member-management routes (PATCH/DELETE) implemented             | PASS                        |
+| Ownership-transfer route implemented                            | PASS                        |
+| Existing authorization primitives reused, none duplicated       | PASS                        |
+| Fail-closed behavior preserved                                  | PASS                        |
+| No later-phase functionality implemented                        | PASS                        |
+| 9 REQUIRED (Phase 2.4) test-matrix items covered at route level | PASS                        |
+| Full regression suite green (98/98 integration, 62/62 unit)     | PASS                        |
+| Lint/format/typecheck/builds/E2E/audit/migration-status clean   | PASS                        |
+| No unrelated changes                                            | PASS                        |
+| Documentation updated                                           | PASS                        |
+| CI green                                                        | PASS — run 34467677861      |
+| `members/invite` route                                          | PASS — implemented, see §14 |
 
 ## 13. Exact Next Action Required from the Owner
 
@@ -214,3 +214,109 @@ One decision, to unblock the remaining member-management gap:
 
 Until this is decided, the member-management API surface is otherwise complete and usable
 for role changes, removal, and ownership transfer of already-synced members.
+
+## 14. Addendum (2026-09-10, same day) — `POST /workspaces/:id/members/invite` Implemented
+
+The owner selected option (a): Clerk's Organization Invitation API. This section records
+the implementation.
+
+**Clerk SDK inspected before writing any code.** Installed `@clerk/backend@3.17.1`
+(`node_modules/.pnpm/@clerk+backend@3.17.1_.../dist/api/endpoints/OrganizationApi.d.ts`):
+`createOrganizationInvitation(params: CreateOrganizationInvitationParams): Promise<OrganizationInvitation>`,
+`params = { organizationId, emailAddress, role: OrganizationMembershipRole, expiresInDays?,
+inviterUserId?, privateMetadata?, publicMetadata?, redirectUrl? }`. `role` is **required** by
+the SDK and typed as `OrganizationCustomRoleKey` — Clerk's own org-role concept, unrelated to
+this project's RBAC.
+
+**The application-role mismatch, resolved without inventing a new mechanism.** Rather than
+mapping our 5-role model onto Clerk's role field or inventing a metadata-carrying convention
+(both of which the governing instruction explicitly ruled out without an approved
+mechanism), inspection of the already-shipped, already-approved sync pipeline
+(`packages/domain/src/identity/memberships.ts`'s `upsertMembershipFromSync()`, doc comment:
+"role is NEVER taken from the Clerk event — a newly synced membership defaults to VIEWER...
+until explicitly assigned by an OWNER/ADMIN in our own system") showed this question was
+**already answered** by existing, approved architecture: no application role is ever carried
+through Clerk sync, for any membership, regardless of how it was created. The invite route
+therefore accepts and carries **no role at all** — `{ emailAddress }` only. Promotion above
+VIEWER remains a separate, already-implemented, already-authorized
+`PATCH /workspaces/:id/members/:membershipId` call, made after the membership exists. This
+is not a workaround; it is the existing rule applied to a new entry point.
+
+For the SDK's still-mandatory `role` field, a fixed, non-authoritative constant
+(`"org:member"`, Clerk's least-privileged built-in role, already named in
+`clerk-integration.md`'s research) is passed on every invitation, never varied or derived —
+consistent with `clerk-integration.md`'s existing finding that Clerk's org roles are not
+used for this project's authorization.
+
+**SDK/version-specific behavior discovered:** `createOrganizationInvitation()`'s
+`OrganizationInvitation` return type has no token/secret field — `url` ("the URL the user can
+use to accept the invitation") is the only sensitive field, and is deliberately excluded from
+this route's response and from `inviteMemberResponseSchema`. Clerk failures surface as
+`ClerkAPIResponseError` (`@clerk/backend/errors`, re-exported from `@clerk/shared/error`),
+carrying `.status` and `.errors[].code`; mapped generically by status range (4xx → 409
+CONFLICT, "may already be invited or a member"; anything else → 503 PROVIDER_UNAVAILABLE,
+matching `webhooks-clerk.ts`'s existing "not configured" precedent) rather than passing
+Clerk's raw error text through to the client or logs.
+
+**Files changed (this addendum):**
+
+- `packages/contracts/src/identity.ts`/`index.ts` — `inviteMemberRequestSchema`
+  (`{ emailAddress }` only), `invitationStatusSchema`, `inviteMemberResponseSchema`
+  (`{ id, emailAddress, status }` — no `url`, no metadata).
+- `apps/api/src/routes/workspaces.ts` — `POST /workspaces/:id/members/invite`; a lazily-
+  constructed, cached `ClerkClient` singleton (mirrors `workers/webhook`'s existing pattern);
+  now takes `{ env }` as a plugin option.
+- `apps/api/src/app.ts` — registers `workspacesRoute` with `{ env }` (previously registered
+  with no options, since no route needed `env` before this one).
+- `tests/integration/api-workspace-members.test.ts` — 11 new tests (see §6 below).
+- `docs/identity/identity-api-contracts.md` — the invite row annotated as implemented.
+
+**Security/authorization behavior:** `requireAuth → requireWorkspaceMembership →
+requirePermission(members.invite)`, identical shape to every other route in this file.
+`organizationId` passed to Clerk is always `workspace.clerkOrganizationId`, resolved from
+the server-side `Workspace` row `requireWorkspaceMembership()` already authorized — never
+from any client-suppliable field (the request body has no `organizationId`/`workspaceId`
+field for zod to even parse). No role is accepted from the client, so no role — OWNER
+included — can ever be created or escalated via this route; this is structural, not merely
+tested. A successful invitation creates zero rows in `workspace_membership`. An audit event
+(`workspace.member_invited`, `SUCCESS`) is written on success, matching
+`identity-api-contracts.md` §3's existing requirement that membership-related mutations are
+audited.
+
+**Tests added (11, all passing):** successful invitation (201); unauthenticated (401);
+`members.invite`-lacking caller, e.g. VIEWER (403, Clerk never called); non-member of the
+target workspace (403, Clerk never called); client-supplied `organizationId`/`workspaceId`
+spoof ignored (asserted against the actual Clerk call arguments); client-supplied `role:
+"OWNER"` ignored, Clerk always receives the fixed non-authoritative role; Clerk 4xx
+(duplicate/already-a-member) → 409 CONFLICT; repeated invitation to the same email is safe
+(first 201, second 409, no crash); Clerk non-API-response failure (network/outage) → 503
+PROVIDER_UNAVAILABLE; a successful invitation creates no local `workspace_membership` row
+(row count asserted unchanged); the response never contains Clerk's invitation `url` or any
+metadata field (asserted against both the parsed JSON's exact key set and the raw response
+body string). Existing webhook/reconciliation membership provisioning was **not**
+separately re-tested in this file — verified unchanged via the full regression suite
+(`identity-sync.test.ts` 9/9, `reconcile.test.ts` 6/6, unmodified).
+
+**Complete test counts after this addendum:** unit 62/62 (unchanged), integration **109/109**
+(98 prior + 11 new), zero regressions.
+
+**Verification:** lint clean, format clean, typecheck clean (15 packages), API + all 6
+worker builds clean, web build compiles (same pre-existing Windows `EPERM` limitation,
+CI-authoritative), E2E 6/6, `pnpm audit --audit-level=high` unchanged (2 pre-existing
+moderate advisories), `prisma migrate status`: "Database schema is up to date!" — **no
+migration, zero schema change**, exactly as instructed to prefer. `gitleaks` 8.24.3 scanned
+the staged diff — no leaks.
+
+**CI run:** recorded in the follow-up commit (see the project's git history for the
+authoritative result, per the established two-commit pattern).
+
+**Known limitations (addendum-specific):**
+
+- The invited person's intended application role cannot be pre-selected at invite time —
+  by design, per the resolution above. The inviter promotes the new member via the existing
+  role-change route once they've accepted and synced in.
+- `GET /workspaces/:id/members` (list — useful for seeing pending vs. accepted invitations
+  in context) remains unimplemented, consistent with §11's existing known limitation.
+- Clerk's own invitation-list/revoke endpoints (`getOrganizationInvitation`,
+  `revokeOrganizationInvitation`) are not exposed by this route surface — not requested,
+  not added speculatively.
