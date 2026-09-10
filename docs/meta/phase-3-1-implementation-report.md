@@ -286,9 +286,10 @@ against a freshly-created Postgres service container — the authoritative clean
 referenced in §20):
 https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34483974408
 
-This UAT phase's own fix (§16) is committed separately; see this report's closing commit for
-its own CI run, recorded in a follow-up "docs: record final green CI run" commit per this
-project's established two-commit pattern.
+**Green (§16's fix commit).** Run `34503888581` — `completed` / `success`, on commit
+`ad414db0c0be501a777e460e05e56e3607ae24a4` (`fix(meta): remove callback requireAuth() that no
+real browser redirect can satisfy`):
+https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34503888581
 
 ## 19. Files Changed
 
