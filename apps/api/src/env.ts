@@ -19,6 +19,21 @@ export const apiEnvSchema = baseEnvSchema.extend({
   // /webhooks/clerk rejects every request (never accepts an unverifiable webhook) rather
   // than falling back to some other trust mechanism. See routes/webhooks-clerk.ts.
   CLERK_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
+  // Meta OAuth (Phase 3.1, docs/meta/meta-oauth.md). All optional for the same reason as
+  // the Clerk variables above — never a real credential in CI (Hard Restriction). When
+  // absent, every Meta route responds 503 PROVIDER_UNAVAILABLE rather than falling back to
+  // any other trust mechanism. Development-app credentials only in this phase — see
+  // docs/meta/meta-app-review.md §2; never a production Meta app.
+  META_APP_ID: z.string().min(1).optional(),
+  META_APP_SECRET: z.string().min(1).optional(),
+  // Re-verified live 2026-09-10 (docs/meta/meta-app-review.md §1) — v25.0 recommended
+  // initial pin, longer support runway than the newer v26.0. Configuration, never
+  // hardcoded in application logic (meta-architecture.md §1 principle 7).
+  META_API_VERSION: z.string().min(1).default("v25.0"),
+  META_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  // AES-256-GCM key for Meta credential encryption-at-rest (meta-token-security.md §2),
+  // 32 bytes, base64-encoded. See packages/domain/src/meta/crypto.ts.
+  META_CREDENTIAL_ENCRYPTION_KEY: z.string().min(1).optional(),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 

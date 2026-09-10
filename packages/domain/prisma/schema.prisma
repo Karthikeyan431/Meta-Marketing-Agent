@@ -4,12 +4,18 @@
 // docs/identity/identity-data-model.md (design) and
 // docs/identity/phase-2-3-implementation-report.md (this implementation).
 //
-// Deliberately NOT modeled here (per identity-data-model.md §3 and the Phase 2.3 Hard
-// Restrictions): meta_connections, ad_accounts, campaigns, ad_sets, ads, creatives,
-// insights, conversations, messages, ai_runs, ai_tool_calls, actions, approvals, goals,
-// optimization_*, reports — all deferred to the phases that own them. AuditEvent below is
-// scoped ONLY to identity/workspace lifecycle events (identity-api-contracts.md §3), not
-// the full future business audit system.
+// Phase 3.1 (Meta OAuth & Connection) — see docs/meta/meta-connection-model.md (design) and
+// docs/meta/phase-3-1-implementation-report.md (this implementation). Adds MetaConnection
+// only — one row per workspace (OD-3A-04), credential material encrypted at the application
+// layer (meta-token-security.md §2), never exposed through any API response.
+//
+// Deliberately NOT modeled here (per meta-architecture.md and this phase's own Hard
+// Restrictions): ad_accounts, campaigns, ad_sets, ads, creatives, insights, webhook_events,
+// conversations, messages, ai_runs, ai_tool_calls, actions, approvals, goals,
+// optimization_*, reports — all deferred to the phases that own them (Phase 4+). AuditEvent
+// below is scoped ONLY to identity/workspace lifecycle events plus Meta connection lifecycle
+// events (identity-api-contracts.md §3, meta-architecture.md §5), not the full future
+// business audit system.
 
 generator client {
   provider        = "prisma-client-js"
@@ -108,8 +114,9 @@ model Workspace {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships WorkspaceMembership[]
-  auditEvents AuditEvent[]
+  memberships    WorkspaceMembership[]
+  auditEvents    AuditEvent[]
+  metaConnection MetaConnection?
 
   @@map("workspaces")
 }
@@ -217,6 +224,58 @@ model AuditEvent {
   @@index([workspaceId, createdAt])
   @@index([eventType])
   @@map("audit_events")
+}
+
+enum MetaConnectionStatus {
+  CONNECTED
+  DEGRADED
+  REAUTH_REQUIRED
+  DISCONNECTED
+  ERROR
+}
+
+/// A workspace's connection to Meta's Marketing API — meta-connection-model.md. One
+/// connection per workspace (OD-3A-04, phase-3-owner-decision-package.md) — reconnecting
+/// updates this row in place rather than creating a second one, incrementing
+/// `connectionVersion`. Credential material is encrypted at the application layer (AES-256-
+/// GCM, meta-token-security.md §2) — the ciphertext/iv/authTag columns are never returned
+/// through any API response (meta-connection-model.md §1's sensitivity table).
+model MetaConnection {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @unique @map("workspace_id") @db.Uuid
+
+  provider String @default("meta")
+  /// Meta's own user ID (from `GET /me`) — external identity only, never an authorization
+  /// key on its own (meta-resource-model.md §1).
+  externalUserId String @map("external_user_id")
+
+  /// AES-256-GCM ciphertext of the long-lived Meta access token. Only the Meta adapter
+  /// layer ever decrypts this (meta-token-security.md §2's "only the Meta integration
+  /// service" rule). Nullable — a DISCONNECTED connection has this credential material
+  /// actually deleted, not merely marked inactive (OD-3A-05's binding engineering rule:
+  /// "credential material must be revoked/deleted promptly on disconnect").
+  credentialCiphertext Bytes? @map("credential_ciphertext")
+  credentialIv         Bytes? @map("credential_iv")
+  credentialAuthTag    Bytes? @map("credential_auth_tag")
+
+  scopes         String[]
+  tokenExpiresAt DateTime? @map("token_expires_at")
+
+  status                  MetaConnectionStatus @default(CONNECTED)
+  lastValidatedAt         DateTime?            @map("last_validated_at")
+  lastSuccessfulApiCallAt DateTime?            @map("last_successful_api_call_at")
+  /// Normalized error category only (meta-error-model.md §1) — never a raw Meta error body.
+  errorState              String?              @map("error_state")
+  /// Increments on every reconnection (meta-connection-model.md §1).
+  connectionVersion       Int                  @default(1) @map("connection_version")
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  disconnectedAt DateTime? @map("disconnected_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("meta_connections")
 }
 
 /// Minimal event envelope for webhook idempotency — identity-sync.md §2 step 3/6. Keyed by

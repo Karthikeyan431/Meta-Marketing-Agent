@@ -10,6 +10,7 @@ import readyRoute from "./routes/ready.js";
 import meRoute from "./routes/me.js";
 import workspacesRoute from "./routes/workspaces.js";
 import webhooksClerkRoute from "./routes/webhooks-clerk.js";
+import metaRoute from "./routes/meta.js";
 
 export interface BuildAppOptions {
   env: ApiEnv;
@@ -63,6 +64,7 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(meRoute);
   await app.register(workspacesRoute, { env });
   await app.register(webhooksClerkRoute, { env });
+  await app.register(metaRoute, { env });
 
   return app;
 }

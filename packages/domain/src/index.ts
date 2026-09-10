@@ -17,6 +17,7 @@ export {
 } from "./rbac-catalog.js";
 
 export * from "./identity/index.js";
+export * from "./meta/index.js";
 
 // Re-exported so consumers (apps/api, workers/webhook) never need a direct @prisma/client
 // dependency of their own just to name these types.
@@ -35,4 +36,6 @@ export type {
   AuditActorType,
   AuditOutcome,
   WebhookEventStatus,
+  MetaConnection,
+  MetaConnectionStatus,
 } from "@prisma/client";

@@ -1,6 +1,6 @@
 # Meta Integration Implementation Sequence
 
-**Document ID:** META-120 | Version 1.1 | Status: Owner-Approved 2026-09-10 | Phase: 3A (Architecture Finalization, closed)
+**Document ID:** META-120 | Version 1.2 | Status: Owner-Approved 2026-09-10; Phase 3.1 implemented 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1 (Implementation, complete)
 
 ## 1. Phase Numbering (owner-decided 2026-09-10, binding — supersedes this document's prior
 
@@ -61,3 +61,20 @@ depends on have their own security gate satisfied, not merely "code written." Th
 discipline already established across Phase 2.3–2.6, where every implementation phase's Stop
 Condition required a green CI run with real security/integration tests before the next phase
 began.
+
+## 4. Phase 3.1 Status (2026-09-10)
+
+**Complete.** OAuth flow, Redis-backed state/CSRF protection, the `MetaConnection` model
+(credential material AES-256-GCM encrypted at the application layer), and the full connection
+lifecycle (connect/list/reconnect/disconnect) are implemented and tested — 35 new integration
+tests, 7 new unit tests, zero regressions. Meta's current documentation was re-verified fresh
+immediately before implementation (superseding Phase 3A's same-day pass for the OAuth-specific
+items). See `phase-3-1-implementation-report.md` for full detail, including §14's security-test
+coverage of all 20 threat-model rows relevant to this phase's scope.
+
+**Real Meta UAT is explicitly not complete** — blocked on the owner creating a Meta Developer
+App and providing Development-mode credentials (no interactive account/app creation was
+performed on the owner's behalf, per this project's standing operating constraint). This
+phase's own re-verification confirmed real UAT will not require App Review or Business
+Verification first once credentials exist (Development-mode + an app-role user is sufficient).
+Phase 3.2 does not begin until real UAT closes this gap.

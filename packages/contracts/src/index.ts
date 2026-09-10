@@ -56,3 +56,16 @@ export {
   type InviteMemberResponse,
   type ListWorkspaceMembersResponse,
 } from "./identity.js";
+
+export {
+  metaConnectionStatusSchema,
+  metaConnectionSummarySchema,
+  metaOAuthInitiationResponseSchema,
+  listMetaConnectionsResponseSchema,
+  disconnectMetaConnectionResponseSchema,
+  type MetaConnectionStatusContract,
+  type MetaConnectionSummary,
+  type MetaOAuthInitiationResponse,
+  type ListMetaConnectionsResponse,
+  type DisconnectMetaConnectionResponse,
+} from "./meta.js";
