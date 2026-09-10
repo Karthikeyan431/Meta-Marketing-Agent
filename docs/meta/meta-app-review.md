@@ -104,19 +104,23 @@ Not independently re-verified this pass beyond what App Review's general require
 (a valid privacy policy and data-use disclosure are standard Meta App Review prerequisites) —
 this project's existing `docs/ai-marketing-manager-phase-1a-architecture-finalization` corpus
 does not yet contain a drafted privacy policy or terms document; producing one is outside this
-architecture phase's scope and is recorded as a Phase 3.7 (Security/UAT/App Review readiness)
-precondition, not resolved here.
+architecture phase's scope and is recorded as a precondition of the Security/UAT/App Review
+readiness gate (`phase-3-implementation-sequence.md` §2, spanning Phases 3–5), not resolved
+here.
 
 ## 7. Production Rollout / Rollback Plan
 
-A staged rollout (development app → production app in Development mode with a small set of
-known test/pilot workspaces → full Live mode) is the recommended pattern, consistent with this
-project's own staged-phase discipline throughout Phases 2.1–2.6. Rollback for a Meta
-integration specifically means: the ability to disable new connections/mutations
-workspace-by-workspace or globally without a code deploy (an operational kill-switch,
-conceptually related to but distinct from the emergency-stop behavior already named in
+**Owner-decided 2026-09-10 (OD-3A-07):** staged rollout —
+`internal/test → pilot → limited production → general availability`. No concrete production
+date is set until App Review (§4) and Business Verification (§5) are confirmed, for every
+stage from "limited production" onward. Rollback for a Meta integration specifically means:
+the ability to disable new connections/mutations workspace-by-workspace or globally without a
+code deploy — this is the workspace-level kill switch **already decided as required, built in
+Phase 3.2** (OD-3A-08, `meta-token-security.md` §6, `phase-3-implementation-sequence.md` §2),
+not deferred to a later readiness phase as this document originally proposed. It remains
+conceptually related to, but distinct from, the broader emergency-stop behavior named in
 `meta-threat-model.md`'s AI-boundary threat #20 and `SPEND_AND_FINANCIAL_CONTROLS.md`'s
-emergency-stop control) — exact mechanism a Phase 3.7 implementation decision.
+Phase-9-scoped emergency-stop control.
 
 ## 8. Summary of Items Requiring Re-Verification Before Phase 3.1
 

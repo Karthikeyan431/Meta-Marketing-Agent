@@ -40,15 +40,20 @@ scheduled sync is system-triggered — this is exactly the case
 `resourceScope` (the specific ad account/campaign scope a sync job covers), `actionScope`,
 `correlationId`, `jobId`, `idempotencyKey`, `retryMetadata`. `workers/sync` and
 `workers/insights` (already-scaffolded, empty placeholder packages — confirmed by direct
-inspection) are the natural homes for this logic in Phase 3.4/3.5 — no new worker package is
+inspection) are the natural homes for this logic in Phase 4.1/4.2 — no new worker package is
 proposed.
 
 ## 3. Sync Frequency, Cursor Handling, Checkpointing
 
-Exact frequency is a Phase 3.4 implementation/product decision, not fixed by this architecture
-document — record only the requirements: every sync job tracks a cursor/checkpoint so a
-partial or interrupted run can resume rather than restart, and checkpoint state is
-workspace-and-ad-account-scoped (never a single global cursor spanning multiple tenants).
+**Owner-decided 2026-09-10 (OD-3A-06):** 30-minute incremental sync interval, as an
+engineering default, configurable — not a permanent business/SLA commitment, and may be tuned
+once real usage patterns and Meta's observed rate-limit headroom are known
+(`meta-rate-limits.md` §2). An explicit user-triggered refresh path (`POST /workspaces/:id/
+meta/sync`, `meta-api-contracts.md` §1) is required in addition to the scheduled interval, not
+as a replacement for it. Structural requirement, unchanged: every sync job tracks a cursor/
+checkpoint so a partial or interrupted run can resume rather than restart, and checkpoint
+state is workspace-and-ad-account-scoped (never a single global cursor spanning multiple
+tenants).
 
 ## 4. Retry, Idempotency, Partial Failure (from META-007, unchanged)
 
@@ -76,4 +81,4 @@ Workspace/ad-account-scoped locking prevents two concurrent sync jobs from racin
 account's data (from `WORKER_ARCHITECTURE.md`, unchanged) — the same pattern already
 established for identity's owner-invariant concurrency safety (`SELECT ... FOR UPDATE` in
 `packages/domain/src/identity/memberships.ts`), conceptually reused here, exact mechanism a
-Phase 3.4 implementation decision.
+Phase 4.1 implementation decision.

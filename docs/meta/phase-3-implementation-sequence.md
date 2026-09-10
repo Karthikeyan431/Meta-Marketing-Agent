@@ -1,37 +1,57 @@
-# Phase 3 — Meta Integration Implementation Sequence
+# Meta Integration Implementation Sequence
 
-**Document ID:** META-120 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-120 | Version 1.1 | Status: Owner-Approved 2026-09-10 | Phase: 3A (Architecture Finalization, closed)
 
-## 1. Reconciliation Note (structural finding from this phase's research)
+## 1. Phase Numbering (owner-decided 2026-09-10, binding — supersedes this document's prior
 
-`workers/README.md` (already shipped, Phase 1) labels the `sync`/`webhook`/`insights` worker
-packages as belonging to **"Phase 4 — Core Meta Data"**, not Phase 3, mirroring
-`IMPLEMENTATION_PHASES.md`'s own split: Phase 3 = "Meta Connection" (OAuth, credential
-protection, account discovery, connection health, adapter/sync **foundation**), Phase 4 =
-"Core Meta Data" (ad accounts, campaigns, ad sets, ads, normalized data model, pagination and
-**synchronization**). The governing task's own suggested Phase 3.4 ("Core advertising resource
-synchronization") and Phase 3.5 ("Insights") sit closer to what this codebase's own docs
-already call Phase 4 than Phase 3. This is not a blocking contradiction — the governing task
-explicitly says "Adjust the sequence if the architecture requires it" — but it is a real,
-citable structural point: **recommend renumbering Phase 3.4/3.5 as the start of Phase 4** once
-implementation actually begins, keeping Phase 3 (3.1–3.3, 3.7) scoped strictly to connection
-establishment/health/security readiness, with 3.4/3.5's _sync/insights architecture content_
-(this phase's `meta-sync.md`/`meta-insights.md`) unchanged either way — only the phase number
-changes, not the design. Recorded here rather than silently renumbering unilaterally, since
-renumbering an already-established phase boundary is itself a decision worth the owner seeing
-explicitly.
+Phase 3.1–3.7 draft)
 
-## 2. Sequence (as given by the governing task, with the note above applied where relevant)
+This phase's original research (`phase-3a-gate-checklist.md`'s verification history) found
+that `workers/README.md` (already shipped, Phase 1) and `IMPLEMENTATION_PHASES.md` already
+split Meta work across Phase 3 ("Meta Connection") and Phase 4 ("Core Meta Data") at the
+master-SDLC level. The owner has now resolved the resulting numbering question directly,
+aligning this project's Meta sub-phases with the master SDLC rather than the flatter Phase
+3.1–3.7 draft this document originally proposed:
 
-| Sequence                                                                                                                          | Scope                                                                                                                                                                                                                            | Depends on                            | Security gates that must not be skipped                                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Phase 3.1** — Meta app + OAuth                                                                                                  | Development/production Meta app setup (`meta-app-review.md` §2); OAuth flow implementation (`meta-oauth.md`); final API version pin, re-verified at start (`meta-app-review.md` §1/§8); permission scope finalized (OD-3A-01/02) | Phase 3A (this document set) approved | State CSRF/replay protection (`meta-threat-model.md` #1–#3) must be implemented and tested before any real OAuth flow runs, even in development        |
-| **Phase 3.2** — Secure connection/token lifecycle                                                                                 | `MetaConnection` migration (`meta-connection-model.md`); encrypted credential storage (`meta-token-security.md`); 5-state health model (`meta-connection-health.md`)                                                             | 3.1                                   | Credential storage/access rules (`meta-token-security.md` §2) verified before any real token is ever persisted                                         |
-| **Phase 3.3** — Business/ad-account discovery                                                                                     | Discovery flow (`meta-account-discovery.md`); OD-3A-04 (single/multi account) implemented                                                                                                                                        | 3.2                                   | Tenant-isolation rules (`meta-resource-model.md` §6, `meta-threat-model.md` #6–#8) tested against real cross-workspace attempts before discovery ships |
-| **Phase 3.4** — Core advertising resource sync _(recommend renumbering to Phase 4.1 per §1 above — content unchanged either way)_ | Campaign/ad-set/ad/creative normalization (`meta-resource-model.md`); sync worker (`meta-sync.md`)                                                                                                                               | 3.3                                   | Worker authorization contract reuse verified (`docs/identity/worker-authorization-contract.md`), no new contract invented                              |
-| **Phase 3.5** — Insights _(recommend renumbering to Phase 4.2 per §1 above)_                                                      | Insights sync (`meta-insights.md`); raw/calculated/AI-interpretation boundary enforced structurally, even with no AI consumer yet                                                                                                | 3.4                                   | Money-handling rule (integer/decimal, never float) verified before any spend-shaped metric is stored                                                   |
-| **Phase 3.6** — Webhooks + reconciliation                                                                                         | Webhook endpoint (`meta-webhooks.md`); reconciliation pass                                                                                                                                                                       | 3.4/3.5                               | Signature verification (`meta-threat-model.md` #13) tested before the endpoint is registered with Meta                                                 |
-| **Phase 3.7** — Security/UAT/App Review readiness                                                                                 | App Review submission (`meta-app-review.md` §4); Business Verification (§5); production rollout (OD-3A-07); emergency disconnect mechanism (OD-3A-08); full `meta-test-matrix.md` executed                                       | 3.1–3.6                               | Full threat-model test coverage (`meta-threat-model.md`, all 20 rows) confirmed green before production Meta app is submitted for review               |
+```
+PHASE 3 — META CONNECTION
+  3.1  OAuth
+  3.2  Secure Token / Connection Lifecycle
+  3.3  Business + Ad Account Discovery
+
+PHASE 4 — CORE META DATA
+  4.1  Campaign / Ad Set / Ad Synchronization
+  4.2  Insights
+
+PHASE 5 — META EVENTS / RELIABILITY
+  5.1  Webhooks
+  5.2  Reconciliation / Recovery
+```
+
+No conflicting numbering scheme may be introduced by any future phase. The architecture
+content this phase produced (`meta-oauth.md`, `meta-token-security.md`,
+`meta-account-discovery.md`, `meta-resource-model.md`, `meta-sync.md`, `meta-insights.md`,
+`meta-webhooks.md`) is unchanged by this renumbering — only the phase labels below change,
+not the design.
+
+## 2. Sequence
+
+| Sequence                                               | Scope                                                                                                                                                                                                                                                                                                                                      | Depends on                            | Security gates that must not be skipped                                                                                                                                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 3.1** — OAuth                                  | Development/production Meta app setup (`meta-app-review.md` §2, OD-3A-03); OAuth flow implementation (`meta-oauth.md`); final API version pin, re-verified at start, never assumed from Phase 3A (`meta-app-review.md` §1/§8); permission scope finalized to the minimum set (OD-3A-01/02)                                                 | Phase 3A (this document set) approved | State CSRF/replay protection (`meta-threat-model.md` #1–#3) must be implemented and tested before any real OAuth flow runs, even in development                                                                        |
+| **Phase 3.2** — Secure Token / Connection Lifecycle    | `MetaConnection` migration (`meta-connection-model.md`); encrypted credential storage (`meta-token-security.md`); 5-state health model (`meta-connection-health.md`); **workspace-level connection disable/kill switch (OD-3A-08) — built here, not deferred to a later phase**; credential deletion + audit-preservation rules (OD-3A-05) | 3.1                                   | Credential storage/access rules (`meta-token-security.md` §2) verified before any real token is ever persisted; kill switch verified to block all new Meta API operations before this sub-phase is considered complete |
+| **Phase 3.3** — Business + Ad Account Discovery        | Discovery flow (`meta-account-discovery.md`); multiple ad accounts under one connection (OD-3A-04)                                                                                                                                                                                                                                         | 3.2                                   | Tenant-isolation rules (`meta-resource-model.md` §6, `meta-threat-model.md` #6–#8) tested against real cross-workspace attempts before discovery ships                                                                 |
+| **Phase 4.1** — Campaign / Ad Set / Ad Synchronization | Campaign/ad-set/ad/creative normalization (`meta-resource-model.md`); sync worker (`meta-sync.md`); scheduled sync at the 30-minute engineering default plus user-triggered refresh (OD-3A-06)                                                                                                                                             | 3.3                                   | Worker authorization contract reuse verified (`docs/identity/worker-authorization-contract.md`), no new contract invented                                                                                              |
+| **Phase 4.2** — Insights                               | Insights sync (`meta-insights.md`); raw/calculated/AI-interpretation boundary enforced structurally, even with no AI consumer yet                                                                                                                                                                                                          | 4.1                                   | Money-handling rule (integer/decimal, never float) verified before any spend-shaped metric is stored                                                                                                                   |
+| **Phase 5.1** — Webhooks                               | Webhook endpoint (`meta-webhooks.md`)                                                                                                                                                                                                                                                                                                      | 4.1/4.2                               | Signature verification (`meta-threat-model.md` #13) tested before the endpoint is registered with Meta                                                                                                                 |
+| **Phase 5.2** — Reconciliation / Recovery              | Periodic reconciliation pass (`meta-sync.md` §1); recovery after connection/provider outages (`meta-connection-health.md` §7)                                                                                                                                                                                                              | 5.1                                   | Reconciliation must converge to true current state regardless of webhook event ordering (`meta-threat-model.md` #15) before this sub-phase is considered complete                                                      |
+
+Security/UAT/App Review readiness (App Review submission, Business Verification, staged
+production rollout per OD-3A-07, full `meta-test-matrix.md` execution) is not a numbered
+sub-phase of its own — it is a cross-cutting completion gate that spans Phases 3–5, verified
+continuously as each sub-phase ships (`meta-app-review.md`, `meta-test-matrix.md`), with a
+final full-matrix pass required before any production Meta app submission, consistent with
+§3's non-skip rule.
 
 ## 3. Explicit Non-Skip Rule
 

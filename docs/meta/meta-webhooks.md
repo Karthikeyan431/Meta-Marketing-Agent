@@ -82,7 +82,7 @@ The current `workers/webhook` package is Clerk-identity-specific — its queue n
 as one of six worker types, distinct in concept from the Clerk-specific one currently
 implemented.
 
-**Recommendation (not a decision this phase makes final — Phase 3.6 implementation choice)**:
+**Recommendation (not a decision this phase makes final — Phase 5.1 implementation choice)**:
 extend `workers/webhook` with a second, Meta-specific job type/processor on the same queue
 infrastructure, rather than creating a seventh worker package — the underlying BullMQ
 bootstrap, health/readiness server, and graceful-shutdown pattern

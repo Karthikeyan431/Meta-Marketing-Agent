@@ -85,7 +85,7 @@ Meta resources are never hard-deleted locally when they disappear from a sync pa
 this project's existing `WorkspaceMembership` soft-delete convention (`status: REMOVED`, never
 a row deletion). A campaign/ad set/ad no longer returned by Meta is marked with a lifecycle
 status reflecting that (e.g. an `EXTERNALLY_REMOVED`-shaped status, exact naming deferred to
-Phase 3.4's schema work), preserving historical Insights data association (§`meta-insights.md`)
+Phase 4.1's schema work), preserving historical Insights data association (§`meta-insights.md`)
 rather than orphaning it.
 
 ## 6. Cross-Workspace Isolation (restates `meta-architecture.md` §2 / `meta-connection-model.md`

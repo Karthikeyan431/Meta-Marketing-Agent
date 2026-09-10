@@ -24,7 +24,7 @@ MetaClient
  ├── listAdSets(connectionRef, externalCampaignId, cursor?)
  ├── listAds(connectionRef, externalAdSetId, cursor?)
  ├── getInsights(connectionRef, scope, dateRange, breakdowns?, cursor?)
- ├── createCampaign(connectionRef, externalAdAccountId, payload)      — not implemented until Phase 3.4+, and even then gated by policy/approval (meta-api-contracts.md)
+ ├── createCampaign(connectionRef, externalAdAccountId, payload)      — not implemented until Phase 4.1+, and even then gated by policy/approval (meta-api-contracts.md)
  ├── updateCampaign(connectionRef, externalCampaignId, payload)
  ├── updateAdSet(connectionRef, externalAdSetId, payload)
  ├── updateAd(connectionRef, externalAdId, payload)

@@ -1,73 +1,78 @@
 # Phase 3A Gate Checklist
 
-**Document ID:** META-121 | Version 1.0 | Status: Draft for Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-121 | Version 1.1 | Status: CLOSED — Owner-Approved 2026-09-10 | Phase: 3A (Architecture Finalization, closed)
 
-Mirrors the established convention from `docs/identity/phase-2-4a-gate-checklist.md`. Every
-item below is unchecked until the owner reviews and approves this document set — this phase
-does not self-certify.
+Mirrors the established convention from `docs/identity/phase-2-4a-gate-checklist.md`. Phase 3A
+is closed. Phase 3.1 remains not started, per the governing closure task's explicit
+instruction — this checklist records closure of the architecture gate only.
 
 ## Documentation Deliverables
 
-- [ ] `docs/meta/meta-architecture.md` — reviewed
-- [ ] `docs/meta/meta-oauth.md` — reviewed
-- [ ] `docs/meta/meta-permissions.md` — reviewed
-- [ ] `docs/meta/meta-token-security.md` — reviewed
-- [ ] `docs/meta/meta-connection-model.md` — reviewed
-- [ ] `docs/meta/meta-account-discovery.md` — reviewed
-- [ ] `docs/meta/meta-resource-model.md` — reviewed
-- [ ] `docs/meta/meta-insights.md` — reviewed
-- [ ] `docs/meta/meta-adapter-contract.md` — reviewed
-- [ ] `docs/meta/meta-error-model.md` — reviewed
-- [ ] `docs/meta/meta-rate-limits.md` — reviewed
-- [ ] `docs/meta/meta-sync.md` — reviewed
-- [ ] `docs/meta/meta-webhooks.md` — reviewed
-- [ ] `docs/meta/meta-connection-health.md` — reviewed
-- [ ] `docs/meta/meta-threat-model.md` — reviewed, all 20 threats acknowledged
-- [ ] `docs/meta/meta-api-contracts.md` — reviewed
-- [ ] `docs/meta/meta-test-matrix.md` — reviewed
-- [ ] `docs/meta/meta-app-review.md` — reviewed, all 8 re-verification items (§8) acknowledged
-- [ ] `docs/meta/phase-3-owner-decision-package.md` — every OD-3A item explicitly decided by
-      the owner (not left implicit)
-- [ ] `docs/meta/phase-3-implementation-sequence.md` — reviewed, including the Phase
-      3.4/3.5-vs-Phase-4 renumbering recommendation (§1)
-- [ ] `ARCHITECTURE_DECISION_REGISTER.md` row 005 update (this phase's re-verification date/
-      findings) — reviewed
+- [x] `docs/meta/meta-architecture.md` — reviewed, approved
+- [x] `docs/meta/meta-oauth.md` — reviewed, approved
+- [x] `docs/meta/meta-permissions.md` — reviewed, approved
+- [x] `docs/meta/meta-token-security.md` — reviewed, approved
+- [x] `docs/meta/meta-connection-model.md` — reviewed, approved
+- [x] `docs/meta/meta-account-discovery.md` — reviewed, approved
+- [x] `docs/meta/meta-resource-model.md` — reviewed, approved
+- [x] `docs/meta/meta-insights.md` — reviewed, approved
+- [x] `docs/meta/meta-adapter-contract.md` — reviewed, approved
+- [x] `docs/meta/meta-error-model.md` — reviewed, approved
+- [x] `docs/meta/meta-rate-limits.md` — reviewed, approved
+- [x] `docs/meta/meta-sync.md` — reviewed, approved
+- [x] `docs/meta/meta-webhooks.md` — reviewed, approved
+- [x] `docs/meta/meta-connection-health.md` — reviewed, approved
+- [x] `docs/meta/meta-threat-model.md` — reviewed, approved, all 20 threats acknowledged
+- [x] `docs/meta/meta-api-contracts.md` — reviewed, approved
+- [x] `docs/meta/meta-test-matrix.md` — reviewed, approved
+- [x] `docs/meta/meta-app-review.md` — reviewed, approved; all 8 re-verification items (§8)
+      acknowledged as binding Phase 3.1 preconditions, not resolved by this closure
+- [x] `docs/meta/phase-3-owner-decision-package.md` — every OD-3A item explicitly decided by
+      the owner (see status table below — OD-3A-05 is decided as "remains open," which is
+      itself a decision, not an omission)
+- [x] `docs/meta/phase-3-implementation-sequence.md` — reviewed, approved, renumbered to
+      align with the master SDLC (Phase 3 = Meta Connection, Phase 4 = Core Meta Data, Phase
+      5 = Meta Events/Reliability), superseding this document's original flatter 3.1–3.7 draft
+- [x] `ARCHITECTURE_DECISION_REGISTER.md` row 005 update — reviewed
 
-## Verification Performed (this phase, confirmed complete)
+## Owner Decision Status (from `phase-3-owner-decision-package.md`, closure summary)
 
-- [x] Full Gate 5 Meta corpus (11 documents) read and reconciled
-- [x] Full relevant Gate 3/6/7/8/9/10/11 documentation read and reconciled
-- [x] Existing codebase inspected — confirmed zero Meta-specific code, schema, or credentials
-      exist anywhere in this repository as of this phase's baseline commit
-- [x] Live official Meta documentation re-verified 2026-09-10 (superseding the 2026-09-04
-      `TECH_STACK.md`/ADR-005 pass) — API version, OAuth mechanics, permission names, App
-      Review, Business Verification, webhooks, rate limiting, Insights API
-- [x] Items that could not be live-verified are explicitly flagged "REQUIRES
-      RE-VERIFICATION BEFORE PHASE 3.1" rather than guessed (`meta-app-review.md` §8)
-- [x] Every architecture document reuses this project's already-shipped authorization
-      primitives, audit schema, and worker-authorization contract — no competing/new
-      authorization path introduced
-- [x] No client-provided workspace, membership, role, permission, actor, or Meta identity
-      value is trusted anywhere in this document set
-- [x] Existing 401/403/404/409 semantics preserved throughout `meta-api-contracts.md`/
-      `meta-error-model.md`
-- [x] Tenant-isolation model (`meta-resource-model.md` §6) matches the existing
-      `requireResourceAccess()` mechanical rule exactly
-- [x] AI boundary confirmed unchanged (`docs/identity/ai-authorization-contract.md`), never
-      treated as an authorization authority anywhere in this document set
-- [x] Worker boundary confirmed unchanged (`docs/identity/worker-authorization-contract.md`),
-      no new worker authorization contract introduced
-- [x] No production/live Meta mutation implementation, code, migration, credential, or
-      dependency was added by this phase
+| Decision                                                        | Status                                                                                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| OD-3A-01 — V1 asset scope (Businesses + Ad Accounts)            | **ACCEPTED**                                                                                                                             |
+| OD-3A-02 — Permission scope (minimum verified set)              | **ACCEPTED**                                                                                                                             |
+| OD-3A-03 — Dev/prod app strategy                                | **ACCEPTED**                                                                                                                             |
+| OD-3A-04 — Account selection (multi-account, single connection) | **ACCEPTED**                                                                                                                             |
+| OD-3A-05 — Disconnect/data retention period                     | **OWNER POLICY OPEN** — not resolved by this closure; credential-deletion and audit-preservation rules are separately binding regardless |
+| OD-3A-06 — Sync frequency (30 minutes)                          | **ENGINEERING DEFAULT** — not a permanent SLA commitment                                                                                 |
+| OD-3A-07 — Production rollout (staged)                          | **ACCEPTED** — no concrete dates set                                                                                                     |
+| OD-3A-08 — Emergency disconnect / kill switch                   | **ACCEPTED** — required in Phase 3.2, not deferred to Phase 9                                                                            |
+| OD-3A-09 — Autonomous Meta mutation (none in Phase 3)           | **ACCEPTED**                                                                                                                             |
+| Meta API version pin                                            | **DEFERRED** to Phase 3.1, re-verified at that time — never permanently pinned by this closure                                           |
 
-## Owner Sign-Off Required Before Phase 3.1
+**OD-3A-05 is explicitly not marked ACCEPTED or fully resolved** — the retention-period policy
+itself remains open, and no future phase may treat it as decided. Recorded accurately here per
+the governing closure task's explicit instruction not to misrepresent this item.
 
-This gate is **not** self-approving. Per the governing task's explicit instruction, Phase 3.1
-does not begin until the owner has:
+## Verification Performed (this closure, confirmed complete)
 
-1. Reviewed and approved (or amended) every document in the Documentation Deliverables list.
-2. Made an explicit decision on every item in `phase-3-owner-decision-package.md`.
-3. Acknowledged the 8 items in `meta-app-review.md` §8 that require direct re-verification
-   before implementation.
+- [x] Only documentation changed — confirmed via `git status`/`git diff`; no package,
+      dependency, schema, migration, environment, or application code file touched
+- [x] No Meta credential, SDK, or API call was introduced
+- [x] No database migration was created
+- [x] No secret was introduced — `gitleaks` 8.24.3 scanned the staged diff, no leaks found
+- [x] Phase numbering is internally consistent — swept for stale `Phase 3.4`–`Phase 3.9`
+      references across every `docs/meta/*.md` file after the renumbering and corrected each
+      one found
+- [x] Owner decisions are accurately represented, including OD-3A-05's genuinely-open status
+- [x] Meta API version remains an explicit Phase 3.1 verification requirement, not a
+      permanent pin, in every document that references it
+- [x] Formatting (`prettier --check .`) clean across all touched files
 
-**Gate status: PENDING OWNER APPROVAL.**
+## Gate Status
+
+**Phase 3A: CLOSED. Architecture APPROVED by the owner, 2026-09-10.**
+
+Phase 3.1 does not begin as part of this closure — per the governing task's explicit
+instruction, this closure records approval of the architecture and the owner's decisions,
+nothing more. Phase 3.1 implementation is a separate, future authorization.

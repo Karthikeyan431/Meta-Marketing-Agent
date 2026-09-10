@@ -43,7 +43,7 @@ reconciliation, to be finalized as an actual Prisma model only in Phase 3.2.
 
 `ERD_SPECIFICATION.md` additionally names `sync_runs`, `webhook_events`, and
 `external_entity_mappings` as related integration-tracking tables. These belong to
-`meta-sync.md` and `meta-webhooks.md`'s conceptual scope (Phase 3.4/3.6), not this connection
+`meta-sync.md` and `meta-webhooks.md`'s conceptual scope (Phase 4.1/5.1), not this connection
 entity — named here only so a future phase doesn't rediscover them as a gap. `ad_accounts` is
 its own entity, evaluated in `meta-resource-model.md` §3, related to `MetaConnection` via
 `meta_connection_id` per `SCHEMA_DESIGN.md`.
