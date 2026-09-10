@@ -159,13 +159,15 @@ schema is up to date!" both before and after this phase's changes.
 
 ## 9. CI Result and Run URL
 
-Pending — reported in the follow-up commit once verified (see the project's git history for
-the authoritative result; this report is not re-edited a second time solely to add the URL,
-per the established two-commit pattern for this project).
+**Green.** Run `34467677861` — `completed` / `success`, every stage passed (install, lint,
+format check, typecheck, migrations, RBAC seed, unit tests, integration tests, build, web
+production build, E2E tests, secret scan, dependency vulnerability scan):
+https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34467677861
 
 ## 10. Commit SHA(s)
 
-Reported in the follow-up commit.
+`9065655163c4e216e2d0783cda783ba09fbbaf1b` — implementation, pushed to `origin/main`
+(`ad5de4d..9065655`), CI-verified green above.
 
 ## 11. Known Limitations
 
@@ -194,7 +196,7 @@ Reported in the follow-up commit.
 | Lint/format/typecheck/builds/E2E/audit/migration-status clean   | PASS                                    |
 | No unrelated changes                                            | PASS                                    |
 | Documentation updated                                           | PASS                                    |
-| CI green                                                        | Pending — see follow-up commit          |
+| CI green                                                        | PASS — run 34467677861                  |
 | `members/invite` route                                          | Blocked — owner decision needed, see §3 |
 
 ## 13. Exact Next Action Required from the Owner
