@@ -1,6 +1,17 @@
 # Phase 2.4A — Owner Decision Package
 
-**Document ID:** IDENT-021 | Version 1.0 | Status: Pending Owner Review | Phase: 2.4A (Architecture Finalization)
+**Document ID:** IDENT-021 | Version 1.1 | Status: Owner-Reviewed, Amended | Phase: 2.4A (Architecture Finalization)
+
+## Amendment (2026-09-10, post-Phase-2.4-implementation)
+
+After Phase 2.4 was implemented, tested, and shipped (commit `966f0193c942ed68eb892a74590c897cf8b483a4`,
+CI green) against this document's original recommendations — OD-2.4A-01 DEFERRED, OD-2.4A-03
+NO AUTONOMOUS EXCEPTION — the owner issued new, superseding decisions for both items. **This
+amendment records that reversal explicitly rather than silently overwriting the original
+text.** OD-2.4A-02 and OD-2.4A-04 are unchanged. See each decision's own "Amended" block
+below for the new text and what it does/does not require of Phase 2.4's already-shipped code.
+Neither amendment required reopening Phase 2.4's OWNER-assignment fix, self-escalation
+prevention, resource authorization, or audit implementation — those remain as shipped.
 
 Mirrors the Phase 2A precedent (`phase-2a-owner-decision-package.md`) — this project's own
 convention, not mandated by the upstream SDLC corpus (confirmed during Phase 2.4A research:
@@ -71,6 +82,23 @@ standing privilege" principle. **Blocks:** whichever future phase implements aut
 optimization or any scheduled (non-request-triggered) mutation worker. **Does not block:**
 Phase 2.4.
 
+**Amended (2026-09-10) — APPROVED.** The owner selected Option 2 + Option 1's accountability
+idea (the recommendation above), ratified as a concrete contract rather than left as a
+recommendation for a later phase to design from scratch: "Use an explicit system actor
+identity for autonomous/system-triggered operations. System-triggered actions must remain
+distinguishable from human user actions in authorization context and audit records. Do not
+bypass the authorization chain." Implemented as `SystemActorContext` and
+`assertSystemActorProvisioned()` in `packages/domain/src/identity/system-actor.ts` — a fixed,
+narrow, explicitly-provisioned permission set per system actor (never derived from the
+configuring human's live role), workspace-scoped, with the configuring human recorded for
+accountability. **This is a type-level and validation-level contract only.** No code
+currently constructs a `SystemActorContext` or calls `assertSystemActorProvisioned()` in a
+live request/job path — no autonomous optimization pipeline or scheduled mutation worker
+exists yet in this codebase (`workers/optimization` remains an empty scaffold). Wiring this
+contract into a real execution path remains the responsibility of whichever future phase
+builds that pipeline, per this decision's original "blocks" scope — unchanged by the
+amendment.
+
 ### OD-2.4A-02: Worker Job Payload Signing
 
 **Decision needed:** `RBAC_AUTHORIZATION.md`'s Background Jobs section calls for workers to
@@ -138,6 +166,21 @@ to the owner's judgment when the guardrail feature itself is designed, not befor
 **Security impact:** low either way if scoped tightly (a pause is reversible and
 non-financial by itself). **Blocks:** whichever future phase implements automated campaign
 guardrails.
+
+**Amended (2026-09-10) — APPROVED, Option 2 (narrowly-scoped guardrail exception).**
+"Worker execution of `campaign.pause` is allowed, but it must pass the same deterministic
+authorization and financial/action guardrails as any other execution path. Workers must
+never bypass permission checks, resource authorization, approval requirements, or audit
+requirements." **This is a policy ratification only — no `campaign.pause` execution code
+exists anywhere in this codebase to attach it to** (verified: no campaign domain, no worker
+references `campaign.pause`). The decision closes `permission-catalog.md`'s previously "one
+genuinely open classification" (see that document's `campaign.pause` row and footnote,
+updated to reflect this) and gives whichever future phase implements the automated-guardrail
+feature a settled answer instead of an open question: that worker MUST re-run the same
+`requirePermission`-equivalent, fail-closed, execution-time checks §3 of
+`worker-authorization-contract.md` already requires of every job — this decision authorizes
+_that_ a guardrail worker may exist, not a bypass of any check a human-initiated
+`campaign.pause` would otherwise go through.
 
 ### OD-2.4A-04: Formally Accept `ADR-002-AI-EXECUTION-BOUNDARY.md`'s Status
 

@@ -5,7 +5,10 @@ export {
   InsufficientRoleAuthorityError,
   SelfRoleMutationError,
   OwnerAssignmentNotAllowedError,
+  SystemActorNotProvisionedError,
 } from "./errors.js";
+
+export { assertSystemActorProvisioned, type SystemActorContext } from "./system-actor.js";
 
 export {
   findUserByClerkId,

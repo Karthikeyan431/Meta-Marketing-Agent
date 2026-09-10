@@ -287,6 +287,8 @@ against the actual commit before pushing (see §18).
 
 ## 17. Files Changed
 
+_(See §22 for files added/changed in the same-day OD-2.4A-01/OD-2.4A-03 amendment.)_
+
 **Modified only — no files created** (all reused existing modules):
 
 - `packages/domain/src/identity/errors.ts` — 3 new error classes.
@@ -321,9 +323,8 @@ push: https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/344568
   paths.
 - **`pnpm audit` reports 2 pre-existing moderate advisories**, unrelated to and unchanged by
   this phase.
-- Phase 2.4A's four recorded owner decisions (`OD-2.4A-01` through `OD-2.4A-04`,
-  `phase-2-4a-decisions.md`) remain open — none block Phase 2.4, all correctly deferred to
-  their respective future phases.
+- **Superseded by §22**: OD-2.4A-01 and OD-2.4A-03 were amended the same day (2026-09-10) —
+  see §22. OD-2.4A-02 and OD-2.4A-04 remain unchanged, non-blocking.
 
 ## 20. Phase 3 Readiness
 
@@ -360,3 +361,69 @@ build directly on the primitives and contracts already in place without re-deriv
 | Git clean                                                   | PASS                                       |
 
 **Phase 2.4: COMPLETE.**
+
+## 22. Amendment (2026-09-10, same day) — OD-2.4A-01 and OD-2.4A-03 Superseded
+
+After the report above was committed and CI-verified green (`966f019`/`fcbe46e`), the owner
+issued new decisions reversing OD-2.4A-01 (system actor identity) and OD-2.4A-03
+(`campaign.pause` worker-invocability) — see `phase-2-4a-decisions.md`'s amendment block for
+the exact approved text. This section records what was, and was not, implemented in
+response, so §17–21 above are not read as still-current on these two points without this
+addendum.
+
+**What was flagged before proceeding:** both amendments directly reversed decisions Phase
+2.4 had just implemented, tested, and shipped against, and both concern features
+(autonomous-optimization pipeline, automated campaign guardrails) that do not exist anywhere
+in this codebase. This was surfaced to the owner before any code was written; the owner
+confirmed "supersede & scaffold only — build primitives, not speculative campaign logic,"
+which is the scope actually implemented below.
+
+**Implemented:**
+
+- `packages/domain/src/identity/system-actor.ts` (new) — `SystemActorContext` interface
+  (`workspaceId`, `systemActorId`, `configuredByUserId`, `grantedPermissions`) and
+  `assertSystemActorProvisioned()`, a fail-closed validation function rejecting any context
+  missing its workspace scope, its accountable configuring human, or a non-empty explicitly-
+  provisioned permission set. 6 new unit tests
+  (`packages/domain/src/identity/system-actor.test.ts`), all passing.
+- `packages/domain/src/identity/errors.ts` — new `SystemActorNotProvisionedError`; also
+  corrected an inaccurate doc comment on `OwnerAssignmentNotAllowedError` found while editing
+  this file (it claimed an unconditional OWNER-assignment ban; the actual, deliberately-
+  designed and tested rule per §3/rbac.md §8.2 is OWNER-acting-only, not unconditional).
+- `packages/domain/src/identity/index.ts` — exports for both.
+- `docs/identity/phase-2-4a-decisions.md` — OD-2.4A-01 and OD-2.4A-03 amended in place with
+  dated "Amended — APPROVED" blocks; original recommendation text preserved, not deleted.
+- `docs/identity/worker-authorization-contract.md` §6 — closed (previously "Open Item"),
+  records the resolved contract and its scope.
+- `docs/identity/permission-catalog.md` — `campaign.pause`'s worker-invocable classification
+  resolved from "Possibly" to "Yes, under guardrails," footnote updated.
+
+**Explicitly not implemented (per the owner's "scaffold only" instruction and this
+codebase's actual state):**
+
+- No `campaign.pause` execution logic, no campaign domain, no automated-guardrail worker —
+  none exist anywhere in this codebase; building them would have meant guessing at undefined
+  business rules and would have exceeded every version of this phase's Hard Restrictions
+  (no Meta/campaign functionality).
+- No autonomous-optimization pipeline or scheduler — `workers/optimization` remains the
+  same empty scaffold it was before this amendment.
+- `SystemActorContext` is not wired into any live request, job, or API route — nothing in
+  this codebase currently constructs one or calls `assertSystemActorProvisioned()` outside
+  its own unit tests. It is a ready, owner-approved contract for a future phase, not a new
+  execution path.
+- Item 1 of the amendment brief ("newRole === 'OWNER' must be rejected through the normal
+  role-change path... owner transfer handled only through the approved owner-transfer flow")
+  was re-verified against the already-shipped, already-owner-reviewed rule in rbac.md §8.2
+  rule 3 (OWNER-acting-only, not a literal unconditional ban — a deliberate correction made
+  during Phase 2.4 to preserve ADR-020's co-ownership legitimacy, explained in §3/rbac.md
+  §8.2). No code change was made here; this interpretation is stated explicitly so the owner
+  can object if the literal unconditional ban was actually intended.
+
+**Regression:** full existing Phase 2.4 test suite re-run unchanged (135/135 passing) — see
+§15's addendum run in §16 amendment note below for the exact command output this pass.
+
+**Security impact:** none of this amendment weakens any existing check — `changeMembershipRole`,
+`removeMembership`, `transferOwnership`, `requirePermission`, and `requireResourceAccess` are
+byte-for-byte unchanged. The new code is additive and inert (no caller) until a future phase
+wires it up, at which point `assertSystemActorProvisioned()`'s fail-closed check is the
+enforcement point OD-2.4A-01 required ("do not bypass the authorization chain").

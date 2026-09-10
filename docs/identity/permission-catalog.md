@@ -1,6 +1,6 @@
 # Permission Catalog — Full Taxonomy
 
-**Document ID:** IDENT-017 | Version 1.0 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`) | Phase: 2.4A (Architecture Finalization)
+**Document ID:** IDENT-017 | Version 1.1 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`) | Phase: 2.4A (Architecture Finalization), amended Phase 2.4 (2026-09-10)
 
 Extends `rbac.md` §3's role→permission matrix with the full per-permission metadata the
 Phase 2.4A task requires: category, action type, risk level, resource scope, financial/
@@ -46,13 +46,13 @@ capability exists, by design, regardless of any future policy layer.
 
 ## Campaigns
 
-| Permission        | Category | Action   | Risk      | Financial | Approval-related | AI-invocable (in principle)                                        | Worker-invocable (in principle)                                                                                                                                                        |
-| ----------------- | -------- | -------- | --------- | :-------: | :--------------: | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `campaign.read`   | Campaign | Read     | Standard  |    No     |        No        | Yes                                                                | Yes — sync/insights/report workers read campaign state                                                                                                                                 |
-| `campaign.create` | Campaign | Mutation | Elevated  |    No     |        No        | Yes, via `ai.propose` → action → approval pipeline (Phase 9)       | No — creation is a proposed action, not a background job trigger                                                                                                                       |
-| `campaign.update` | Campaign | Mutation | Elevated  |    No     |        No        | Yes, same pipeline                                                 | No                                                                                                                                                                                     |
-| `campaign.pause`  | Campaign | Mutation | Elevated  |    No     |        No        | Yes, same pipeline                                                 | Possibly — a scheduled/automated pause rule is a bounded, reversible, non-financial action; still routes through the same policy/approval chain, never a bare worker-internal decision |
-| `campaign.delete` | Campaign | Mutation | High Risk |    No     |       Yes        | With mandatory approval — deletion is harder to reverse than pause | No                                                                                                                                                                                     |
+| Permission        | Category | Action   | Risk      | Financial | Approval-related | AI-invocable (in principle)                                        | Worker-invocable (in principle)                                                                                                                                                                                                                                                                                 |
+| ----------------- | -------- | -------- | --------- | :-------: | :--------------: | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `campaign.read`   | Campaign | Read     | Standard  |    No     |        No        | Yes                                                                | Yes — sync/insights/report workers read campaign state                                                                                                                                                                                                                                                          |
+| `campaign.create` | Campaign | Mutation | Elevated  |    No     |        No        | Yes, via `ai.propose` → action → approval pipeline (Phase 9)       | No — creation is a proposed action, not a background job trigger                                                                                                                                                                                                                                                |
+| `campaign.update` | Campaign | Mutation | Elevated  |    No     |        No        | Yes, same pipeline                                                 | No                                                                                                                                                                                                                                                                                                              |
+| `campaign.pause`  | Campaign | Mutation | Elevated  |    No     |        No        | Yes, same pipeline                                                 | Yes, under guardrails (OD-2.4A-03, amended/approved 2026-09-10) — a scheduled/automated pause rule may originate from a worker, but must pass the same deterministic authorization, resource-authorization, approval, and audit requirements as any other execution path; never a bare worker-internal decision |
+| `campaign.delete` | Campaign | Mutation | High Risk |    No     |       Yes        | With mandatory approval — deletion is harder to reverse than pause | No                                                                                                                                                                                                                                                                                                              |
 
 ## Reporting
 
@@ -98,12 +98,15 @@ human's request to use AI passes through, not something the AI can be said to "i
   (initial OAuth grant vs. re-authorizing an existing, possibly-expired connection) and the
   existing docs (`clerk-integration.md`-adjacent Meta docs, out of this phase's scope) treat
   them as separate lifecycle events; no change proposed.
-- **`campaign.pause`'s "possibly worker-invocable"** entry above is the one genuinely open
-  classification in this table — flagged as **OWNER DECISION REQUIRED** in
-  `phase-2-4a-decisions.md` (should a scheduled/automated pause ever be allowed to originate
-  from a worker without a human-initiated `ai.propose`/approval step first, e.g. for a
-  "pause on budget exhaustion" guardrail) — everything else above was resolvable from
-  already-approved principles without a new decision.
+- **`campaign.pause`'s worker-invocable classification** was the one genuinely open
+  classification in this table — resolved 2026-09-10 by OD-2.4A-03 (amended): a
+  scheduled/automated pause rule may originate from a worker (Option 2, "a narrowly-scoped
+  guardrail exception"), provided it passes the same deterministic authorization checks any
+  other execution path would. **This is a policy ratification only** — no `campaign.pause`
+  execution code or automated-guardrail worker exists anywhere in this codebase yet; the
+  decision gives whichever future phase builds that feature a settled answer rather than an
+  open question. Everything else in this table was resolvable from already-approved
+  principles without a new decision.
 - No new permission is proposed or added by this document — the 27-permission catalog is
   unchanged; this table's purpose is metadata, not catalog expansion, per the Hard
   Restrictions ("do not add new permissions to production code").

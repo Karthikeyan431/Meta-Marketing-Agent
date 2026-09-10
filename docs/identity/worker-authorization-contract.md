@@ -1,6 +1,6 @@
 # Worker Authorization Contract
 
-**Document ID:** IDENT-019 | Version 1.0 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`) | Phase: 2.4A (Architecture Finalization)
+**Document ID:** IDENT-019 | Version 1.1 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`) | Phase: 2.4A (Architecture Finalization), amended Phase 2.4 (2026-09-10)
 
 Formalizes `authorization.md` §4 and §10 into a complete, implementation-ready contract for
 every background job. **No new worker job type is implemented by this document** — the only
@@ -92,7 +92,7 @@ as opposed to mutating one workspace's tenant-owned resources) — a future job 
 campaign/budget/report data must always carry a specific `workspaceId`, never operate
 "globally," regardless of how it's triggered.
 
-## 6. Open Item: The Actor Identity Question for System-Triggered Jobs
+## 6. The Actor Identity Question for System-Triggered Jobs (resolved 2026-09-10)
 
 `AUTONOMOUS_OPTIMIZATION.md`'s pipeline (Scheduler → ... → Execute) and any future
 `sync`/`insights`/`optimization` worker job that runs on a schedule rather than as a direct
@@ -100,8 +100,25 @@ consequence of one specific user's request raise the same question `ai-authoriza
 contract.md` §6 raises for autonomous AI actions: **what `initiatingActor` does a
 system-triggered job carry?** Phase 2.3's `AuditActorType` enum already has `SYSTEM` and
 `RECONCILIATION` variants precisely because this question was anticipated during Phase 2.3's
-audit-schema design, even though no system-triggered _mutation_ job exists yet. This is not
-resolved by this document — see `phase-2-4a-decisions.md`'s `OD-2.4A-01` (the same decision
-item as the AI contract's open question — both share one root cause and should be decided
-together, not independently). Does not block Phase 2.4 implementation (no autonomous or
-scheduled mutation job exists yet); blocks whichever future phase builds one.
+audit-schema design, even though no system-triggered _mutation_ job exists yet.
+
+**Resolved by OD-2.4A-01 (amended, approved 2026-09-10 — see `phase-2-4a-decisions.md`):**
+a system-triggered job's `initiatingActor` is a `SystemActorContext`
+(`packages/domain/src/identity/system-actor.ts`) — `{ workspaceId, systemActorId,
+configuredByUserId, grantedPermissions }`. `assertSystemActorProvisioned()` enforces
+fail-closed: a system actor with no explicitly-granted permissions has no authority, never
+implicit/ambient authority. When a job's `initiatingActor` is a system actor rather than a
+human `userId`, the audit trail records `actorType = SYSTEM` with `actorId = systemActorId`
+(the existing descriptive-string precedent from `WEBHOOK`/`RECONCILIATION`, not the human's
+`User.id` — keeps `SYSTEM` audit records structurally distinguishable from `USER` ones per
+OD-2.4A-01's requirement) and `configuredByUserId` in the event's `metadata`, preserving the
+accountability chain back to the human who configured the triggering rule.
+
+**Still not implemented — this section resolves the contract, not a live execution path.**
+No worker job today constructs a `SystemActorContext` or produces `actorType = SYSTEM` for a
+mutation (Phase 2.3's `RECONCILIATION` actor remains the only non-human actor in real use,
+and it is read/reconciliation-only per §5). §3's execution-time re-verification rules apply
+identically once a real system-triggered job exists: re-derive authority from the current
+`SystemActorContext`'s `grantedPermissions` at execution time, never trust a stale payload
+snapshot. Blocks nothing further in Phase 2.4; whichever future phase builds the first real
+autonomous/scheduled mutation job wires it through this now-settled contract.

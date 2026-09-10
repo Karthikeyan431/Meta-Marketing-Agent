@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.5 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.6 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done; Phase 2.4A architecture finalized; Phase 2.4 RBAC & Permission Enforcement implemented, then amended) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -32,6 +32,19 @@ available and the full authentication boundary was re-verified end-to-end agains
 real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
 No code change was required. This closes the "no real Clerk application" limitation
 carried since Phase 2.1/2.2.
+
+**Phase 2.4 amendment (2026-09-10, same day):** owner issued superseding decisions for
+OD-2.4A-01 (system actor identity: DEFERRED → APPROVED) and OD-2.4A-03 (`campaign.pause`
+worker-invocability: NO EXCEPTION → APPROVED under guardrails), reversing the two decisions
+Phase 2.4 had just shipped against. Both amendments were policy/contract ratifications, not
+new execution paths — no autonomous-optimization pipeline or campaign domain exists yet to
+attach them to. Added `SystemActorContext`/`assertSystemActorProvisioned()`
+(`packages/domain/src/identity/system-actor.ts`) as the now-settled, owner-approved contract
+for whichever future phase builds a system-triggered mutation job; updated
+`worker-authorization-contract.md` §6 and `permission-catalog.md`'s `campaign.pause` row to
+record the ratified policy. OD-2.4A-02 and OD-2.4A-04 were unchanged. See
+`phase-2-4-implementation-report.md`'s addendum and `phase-2-4a-decisions.md`'s amendment
+block for full detail.
 
 **Phase 2.4 (2026-09-10):** RBAC & Permission Enforcement implemented — see
 `phase-2-4-implementation-report.md`. Closed the OWNER-assignment gap in

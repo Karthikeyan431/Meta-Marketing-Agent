@@ -50,9 +50,10 @@ export class SelfRoleMutationError extends Error {
   }
 }
 
-/** OWNER can only ever be assigned via `transferOwnership()`'s atomic swap — rbac.md §8.2
- *  rule 1 / ADR-028. `changeMembershipRole()` rejects `newRole: "OWNER"` unconditionally,
- *  for every caller, with no exception. */
+/** `changeMembershipRole()` rejects `newRole: "OWNER"` unless the acting membership is
+ *  itself OWNER — rbac.md §8.2 rule 3 / ADR-028. An ADMIN can never grant OWNER to anyone,
+ *  including another ADMIN; an OWNER granting OWNER is a legitimate co-ownership grant,
+ *  invariant-safe by construction (ADR-020's "another active owner" language). */
 export class OwnerAssignmentNotAllowedError extends Error {
   code = "OWNER_ASSIGNMENT_NOT_ALLOWED";
 
@@ -75,5 +76,20 @@ export class DeferredSyncError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "DeferredSyncError";
+  }
+}
+
+/**
+ * Thrown by `assertSystemActorProvisioned` when a `SystemActorContext` is missing its
+ * workspace scope, its accountable configuring human, or its explicitly-provisioned
+ * permission set — OD-2.4A-01 (approved 2026-09-10): a system actor must never run with an
+ * implicit or inherited privilege, only a fixed, narrow, explicitly-granted one. Fail closed.
+ */
+export class SystemActorNotProvisionedError extends Error {
+  code = "SYSTEM_ACTOR_NOT_PROVISIONED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "SystemActorNotProvisionedError";
   }
 }
