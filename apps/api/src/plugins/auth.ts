@@ -4,12 +4,16 @@ import { verifyToken } from "@clerk/backend";
 import type { ApiEnv } from "../env.js";
 
 /**
- * The authenticated Clerk identity for a request — nothing more. No workspace, membership,
- * role, or permission fields exist yet (docs/identity/phase-2-implementation-sequence.md
- * defers those to later Phase 2 steps); this is Phase 2.2's authentication boundary only.
+ * The authenticated Clerk identity for a request. `orgId` is the *claimed* active
+ * organization from the verified session JWT itself (never a client-supplied field) — the
+ * server-derived input `requireWorkspace()` (Phase 2.3, authorization.ts) resolves against
+ * real membership data; workspace/membership/role/permission are never decided here.
  */
 export interface AuthenticatedIdentity {
   userId: string;
+  /** The active-organization claim from the verified session token, or null if none is
+   *  active for this session. */
+  orgId: string | null;
 }
 
 declare module "fastify" {
@@ -76,12 +80,33 @@ async function resolveAuthenticatedIdentity(
 
   try {
     const claims = await verifyToken(token, { secretKey: env.CLERK_SECRET_KEY });
-    return { userId: claims.sub };
+    return { userId: claims.sub, orgId: extractOrgId(claims) };
   } catch {
     // Invalid signature, expired, malformed — all treated identically as "no identity."
     // Never logged with the token itself (SEC-008 / CLAUDE.md "never expose secrets").
     return null;
   }
+}
+
+/**
+ * Clerk's session token shape for the active-organization claim is version-dependent
+ * (clerk-integration.md finding #2's "re-verify version-sensitive items" caveat, confirmed
+ * again here against @clerk/backend@3.17.1's own JwtPayload type): the classic token shape
+ * carries `org_id` at the top level, while the newer `v: 2` shape nests it under `o.id`.
+ * Checking both defensively means this doesn't silently stop resolving org context if the
+ * Clerk instance's token version changes.
+ */
+function extractOrgId(claims: Record<string, unknown>): string | null {
+  const flat = claims["org_id"];
+  if (typeof flat === "string" && flat.length > 0) return flat;
+
+  const nested = claims["o"];
+  if (nested && typeof nested === "object" && "id" in nested) {
+    const id = (nested as { id?: unknown }).id;
+    if (typeof id === "string" && id.length > 0) return id;
+  }
+
+  return null;
 }
 
 /** The seed of a future requireAuth() — see docs/identity/authorization.md §1. */

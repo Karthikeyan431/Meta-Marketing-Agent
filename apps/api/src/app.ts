@@ -8,6 +8,8 @@ import authPlugin from "./plugins/auth.js";
 import healthRoute from "./routes/health.js";
 import readyRoute from "./routes/ready.js";
 import meRoute from "./routes/me.js";
+import workspacesRoute from "./routes/workspaces.js";
+import webhooksClerkRoute from "./routes/webhooks-clerk.js";
 
 export interface BuildAppOptions {
   env: ApiEnv;
@@ -33,6 +35,25 @@ export async function buildApp(options: BuildAppOptions) {
     trustProxy: true,
   });
 
+  // Captures the exact raw body string onto request.rawBody alongside normal JSON
+  // parsing — POST /webhooks/clerk needs the literal bytes to verify Clerk's HMAC
+  // signature (verifying a re-serialized object would silently break on any
+  // whitespace/key-order difference). Every other route's parsed-body behavior is
+  // unchanged.
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
+    const raw = typeof body === "string" ? body : body.toString("utf8");
+    request.rawBody = raw;
+    if (raw.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(raw));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
+
   await app.register(requestIdPlugin);
   await app.register(errorHandlerPlugin);
   await app.register(securityPlugin, { env });
@@ -40,6 +61,8 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(healthRoute);
   await app.register(readyRoute, { env });
   await app.register(meRoute);
+  await app.register(workspacesRoute);
+  await app.register(webhooksClerkRoute, { env });
 
   return app;
 }

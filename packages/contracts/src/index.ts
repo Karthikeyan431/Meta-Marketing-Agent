@@ -20,4 +20,17 @@ export {
   type DependencyCheck,
 } from "./health.js";
 
-export { meResponseSchema, type MeResponse } from "./identity.js";
+export {
+  roleSchema,
+  workspaceStatusSchema,
+  workspaceSummarySchema,
+  meResponseSchema,
+  listWorkspacesResponseSchema,
+  switchWorkspaceResponseSchema,
+  type RoleContract,
+  type WorkspaceStatusContract,
+  type WorkspaceSummary,
+  type MeResponse,
+  type ListWorkspacesResponse,
+  type SwitchWorkspaceResponse,
+} from "./identity.js";

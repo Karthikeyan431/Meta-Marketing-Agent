@@ -24,9 +24,11 @@
     "dev:api": "pnpm --filter @ai-marketing-manager/api run dev",
     "dev:web": "pnpm --filter @ai-marketing-manager/web run dev",
     "dev:worker:sync": "pnpm --filter @ai-marketing-manager/worker-sync run dev",
+    "dev:worker:webhook": "pnpm --filter @ai-marketing-manager/worker-webhook run dev",
     "db:generate": "pnpm --filter @ai-marketing-manager/domain run generate",
     "db:migrate:dev": "pnpm --filter @ai-marketing-manager/domain run migrate:dev",
-    "db:migrate:deploy": "pnpm --filter @ai-marketing-manager/domain run migrate:deploy"
+    "db:migrate:deploy": "pnpm --filter @ai-marketing-manager/domain run migrate:deploy",
+    "db:seed": "pnpm --filter @ai-marketing-manager/domain run seed"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

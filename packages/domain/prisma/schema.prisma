@@ -1,18 +1,15 @@
 // Canonical data model — packages/domain
 //
-// INTENTIONALLY EMPTY OF BUSINESS MODELS as of Phase 1 (Foundation).
-// Per the Phase 1 task instructions: "Do not prematurely implement the complete
-// business schema" and "If foundational tables are required by the selected
-// authentication/workspace architecture, document and justify them before adding
-// them." No such justification exists yet — Identity & Multi-Tenancy (users,
-// workspaces, workspace_memberships) is explicitly Phase 2 scope per
-// docs/implementation/implementation-plan.md and
-// docs/ai-marketing-manager-gate-3-docs/docs/04-data/DATA_ARCHITECTURE.md.
+// Phase 2.3 (Application User & Workspace Foundation) — see
+// docs/identity/identity-data-model.md (design) and
+// docs/identity/phase-2-3-implementation-report.md (this implementation).
 //
-// This schema still exercises the real migration workflow end-to-end: enabling
-// the pgcrypto extension (needed by every future table for UUID primary keys,
-// per the canonical-ID convention in ADR-003-CANONICAL-DATA-MODEL.md) is a
-// genuine, justified foundation-level migration, not a placeholder table.
+// Deliberately NOT modeled here (per identity-data-model.md §3 and the Phase 2.3 Hard
+// Restrictions): meta_connections, ad_accounts, campaigns, ad_sets, ads, creatives,
+// insights, conversations, messages, ai_runs, ai_tool_calls, actions, approvals, goals,
+// optimization_*, reports — all deferred to the phases that own them. AuditEvent below is
+// scoped ONLY to identity/workspace lifecycle events (identity-api-contracts.md §3), not
+// the full future business audit system.
 
 generator client {
   provider        = "prisma-client-js"
@@ -23,4 +20,218 @@ datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   extensions = [pgcrypto]
+}
+
+/// Application-owned role set — rbac.md §1. NOT Clerk's Organization role; never derived
+/// from Clerk data (clerk-integration.md finding #6, identity-sync.md §1).
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  ANALYST
+  VIEWER
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  WEBHOOK
+  RECONCILIATION
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+/// One row per Clerk-authenticated human — identity-data-model.md §2.
+model User {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// External identity reference only — never used as an authorization key on its own
+  /// (authorization.md §2's external-ID rule applied to identity).
+  clerkUserId String  @unique @map("clerk_user_id")
+  email       String?
+  displayName String? @map("display_name")
+
+  /// Soft-delete marker — identity-sync.md §5 (a deleted Clerk user's row is retained,
+  /// never hard-deleted, to preserve audit/action attribution).
+  deletedAt DateTime? @map("deleted_at")
+
+  /// Set only by webhook/reconciliation sync — the out-of-order-event timestamp guard
+  /// (identity-sync.md §3: "uses event timestamp, not arrival order").
+  clerkSyncedAt DateTime? @map("clerk_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships WorkspaceMembership[]
+
+  @@map("users")
+}
+
+/// The tenant boundary — workspace-model.md §1, multi-tenancy.md §1.
+model Workspace {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// 1:1 with a Clerk Organization (workspace-model.md §2) — nullable because a workspace
+  /// row must never be created without this reference under Phase 2.3's sync-only creation
+  /// model (see phase-2-3-implementation-report.md), but the column itself stays nullable
+  /// to match the approved design's own stated nullability rather than tightening it here.
+  clerkOrganizationId String? @unique @map("clerk_organization_id")
+
+  name          String
+  status        WorkspaceStatus @default(ACTIVE)
+  timezone      String?
+  /// Non-relational settings only (identity-data-model.md §2) — never an authorization fact.
+  configuration Json            @default("{}")
+
+  clerkSyncedAt DateTime? @map("clerk_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships WorkspaceMembership[]
+  auditEvents AuditEvent[]
+
+  @@map("workspaces")
+}
+
+/// Join row: (user, workspace) → role, status — workspace-model.md §1. Carries the Role,
+/// not User or Workspace alone.
+model WorkspaceMembership {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+
+  role   Role
+  status MembershipStatus @default(ACTIVE)
+
+  clerkSyncedAt DateTime? @map("clerk_synced_at")
+  removedAt     DateTime? @map("removed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace                       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  overrides MembershipPermissionOverride[]
+
+  /// One user cannot have duplicate membership in a workspace (Phase 2.3 Step 2 invariant).
+  @@unique([workspaceId, userId])
+  /// "Which workspaces does this user belong to" — identity-data-model.md §4.
+  @@index([userId])
+  /// Active membership lookups per workspace — identity-data-model.md §4.
+  @@index([workspaceId, status])
+  @@map("workspace_memberships")
+}
+
+/// The permission catalog — rbac.md §3. Queryable data, not hardcoded conditionals
+/// (identity-data-model.md §1).
+model Permission {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key           String @unique
+  resourceGroup String @map("resource_group")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+  overrides       MembershipPermissionOverride[]
+
+  @@map("permissions")
+}
+
+/// The queryable form of the rbac.md §3 role→permission matrix.
+model RolePermission {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  role         Role
+  permissionId String @map("permission_id") @db.Uuid
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+/// Schema placeholder only — rbac.md §5 (DEFERRED, OD-05). Not populated or read by any
+/// code in Phase 2.3.
+model MembershipPermissionOverride {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  membershipId String  @map("membership_id") @db.Uuid
+  permissionId String  @map("permission_id") @db.Uuid
+  granted      Boolean
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  membership WorkspaceMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission Permission          @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, permissionId])
+  @@map("membership_permission_overrides")
+}
+
+/// Identity/workspace lifecycle audit trail only (identity-api-contracts.md §3,
+/// AUDIT_LOGGING.md/SEC-012's required metadata). NOT the full future business audit
+/// system (campaigns/actions/approvals, etc. — identity-data-model.md §3 defers that).
+model AuditEvent {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String?        @map("workspace_id") @db.Uuid
+
+  actorType AuditActorType @map("actor_type")
+  /// Our internal User.id when actorType = USER; a stable descriptive string (e.g.
+  /// "clerk-webhook", "clerk-reconciliation") for SYSTEM/WEBHOOK/RECONCILIATION; null when
+  /// truly unattributable (never the case for USER-actor events).
+  actorId   String?        @map("actor_id")
+
+  eventType    String
+  resourceType String? @map("resource_type")
+  resourceId   String? @map("resource_id")
+  action       String
+  outcome      AuditOutcome
+
+  correlationId String? @map("correlation_id")
+  /// Safe metadata only — SEC-012 "Never Log": no tokens, secrets, or full payloads.
+  metadata      Json    @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([eventType])
+  @@map("audit_events")
+}
+
+/// Minimal event envelope for webhook idempotency — identity-sync.md §2 step 3/6. Keyed by
+/// the Standard Webhooks `svix-id` header, i.e. Clerk's own event ID. Deliberately does NOT
+/// store the payload (identity-sync.md's "only sync what you need" + data-minimization) —
+/// reconciliation (identity-sync.md §4) is the backstop for anything this envelope alone
+/// can't recover.
+model ClerkWebhookEvent {
+  id          String             @id
+  eventType   String             @map("event_type")
+  status      WebhookEventStatus @default(RECEIVED)
+  failureNote String?            @map("failure_note")
+
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  @@map("clerk_webhook_events")
 }

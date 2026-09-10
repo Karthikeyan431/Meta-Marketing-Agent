@@ -81,6 +81,9 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.2.2
         version: 10.3.0
+      bullmq:
+        specifier: ^5.34.5
+        version: 5.81.4
       fastify:
         specifier: ^5.2.1
         version: 5.12.1
@@ -176,6 +179,9 @@ importers:
       prisma:
         specifier: ^6.2.1
         version: 6.19.3(magicast@0.3.5)(typescript@5.9.3)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.13
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -368,9 +374,18 @@ importers:
       '@ai-marketing-manager/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ai-marketing-manager/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@ai-marketing-manager/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@clerk/backend':
+        specifier: ^3.17.1
+        version: 3.17.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      bullmq:
+        specifier: ^5.34.5
+        version: 5.81.4
       tsx:
         specifier: ^4.19.2
         version: 4.23.13

@@ -1,6 +1,6 @@
 # Phase 2 Implementation Sequence
 
-**Document ID:** IDENT-015 | Version 1.2 | Status: IN PROGRESS (steps 1, 2, 12 done) | Phase: 2 (Implementation)
+**Document ID:** IDENT-015 | Version 1.3 | Status: IN PROGRESS (steps 1, 2, 3–11, 12 done) | Phase: 2 (Implementation)
 
 This document is planning input for Phase 2 implementation. **No code, dependency, or
 configuration change has been made as part of producing this document** — the Next.js
@@ -32,6 +32,18 @@ available and the full authentication boundary was re-verified end-to-end agains
 real `apps/api`/Next.js identity match) — see `phase-2-2-implementation-report.md` §12.
 No code change was required. This closes the "no real Clerk application" limitation
 carried since Phase 2.1/2.2.
+
+**Phase 2.3 (2026-09-10):** steps 3–11 (Application User, Workspace, Workspace
+Membership, Role model, Permission model, Authorization primitives, Resource-level
+authorization, Workspace-aware API protection, Clerk/application identity
+synchronization) are now done — see `phase-2-3-implementation-report.md`. Workspace
+switching (step 13) is also implemented (`POST /workspaces/:id/switch`), ahead of its
+originally-sequenced position, since it required no additional foundation beyond steps
+3–11. Tenant-isolation and security regression tests (steps 14–15) were executed
+alongside steps 8–11 rather than deferred to the end, consistent with this project's
+established incremental-verification pattern. Real Clerk UAT (step 16) closed
+2026-09-10 against a live Clerk development instance with Organizations enabled — see
+`phase-2-3-implementation-report.md` §15.
 
 ## 1. Next.js Upgrade Recommendation
 
@@ -105,30 +117,49 @@ on (all now ACCEPTED/DEFERRED, none blocking).
    a Phase 2.2 prerequisite — `phase-2-1-implementation-report.md` §10).
 3. **Application User** — the `users` table (`identity-data-model.md` §2), keyed by
    `clerk_user_id` — depends on step 2 existing to have a Clerk identity to key against.
+   **DONE (Phase 2.3)** — `packages/domain/src/identity/users.ts`'s `provisionUser()`,
+   called from `apps/api`'s `requireAuth()` on first contact; idempotent, race-safe (final
+   protection is the `clerk_user_id` unique constraint).
 4. **Workspace** — the `workspaces` table, including the `clerk_org_id` reference column
    per OD-02's Option A — depends on step 2.
+   **DONE (Phase 2.3)** — `createWorkspaceWithOwner()`; the only code path that creates a
+   Workspace row, invoked exclusively from sync (webhook/reconciliation), never from a
+   request-time path — see `phase-2-3-implementation-report.md` §6.
 5. **Workspace Membership** — the `workspace_memberships` join table — depends on steps 3
    and 4.
+   **DONE (Phase 2.3)** — `upsertMembershipFromSync()`/`removeMembership()`/
+   `changeMembershipRole()`/`transferOwnership()`.
 6. **Role model** — the `role` enum on `Membership` (`rbac.md` §1/§3, OD-03 resolved:
    `OWNER/ADMIN/MANAGER/ANALYST/VIEWER`, no separate `APPROVER`) — depends on step 5.
+   **DONE (Phase 2.3)** — `Role` Postgres enum, seeded via `prisma/seed.ts`.
 7. **Permission model** — `permissions`/`role_permissions` tables and the
    `membership_permission_overrides` placeholder (unpopulated per OD-05) —
    depends on step 6.
+   **DONE (Phase 2.3)** — full rbac.md §3 matrix (27 permissions × role grants) seeded and
+   drift-tested against `packages/domain/src/rbac-catalog.ts`; the override table remains
+   an unpopulated placeholder, exactly as designed.
 8. **Authorization primitives** — `requireAuth()/requireWorkspace()/requireMembership()/
 requirePermission()/requireResourceAccess()` (`authorization.md` §1, owner-accepted
    Authorization Contract) — depends on steps 3–7 existing to have real data to check
    against.
+   **DONE (Phase 2.3)** — `apps/api/src/plugins/authorization.ts`.
 9. **Resource-level authorization** — the `WHERE id AND workspace_id` mechanical rule
    (`authorization.md` §2) applied to whichever resources exist at this point — depends
    on step 8; this is the primitive every future resource (campaigns, reports, etc., built
    in later phases) will call.
+   **DONE (Phase 2.3)** — `requireResourceAccess()` implemented generically; no
+   resource-specific (Meta) authorization added, per the Hard Restrictions.
 10. **Workspace-aware API protection** — wiring steps 8–9 into actual route handlers
     (`identity-api-contracts.md`) — depends on step 9.
+    **DONE (Phase 2.3)** — `GET /me`, `GET /workspaces`, `POST /workspaces/:id/switch`.
 11. **Clerk/application identity synchronization** — webhook handlers + reconciliation job
     (`identity-sync.md`), reconciliation baseline ACCEPTED at every 30 minutes,
     configurable (OD-09) — depends on steps 3–5 existing to sync _into_; the exact
     membership-created event name (OD-09's other sub-item) is confirmed against the live
     Dashboard immediately before this step's membership-creation handler specifically.
+    **DONE (Phase 2.3)** — `POST /webhooks/clerk` + `workers/webhook`'s processor and
+    `reconcileIdentity()`; `organizationMembership.created` confirmed as the real event
+    name via `@clerk/backend@3.17.1`'s own shipped types (finding #8 closed).
 12. **Frontend auth/session** — `<ClerkProvider>`, sign-in/sign-up UI — depends on step 2.
     **DONE (Phase 2.2, see `phase-2-2-implementation-report.md`)** — `middleware.ts`
     (`clerkMiddleware()`), `<ClerkProvider>` + `<Show>`-based sign-in/up/out controls in
@@ -141,14 +172,27 @@ requirePermission()/requireResourceAccess()` (`authorization.md` §1, owner-acce
     owner-accepted active-workspace resolution chain (`Clerk user → Clerk org context →
 application membership → workspace status → authorized workspace`, OD-11) — depends
     on steps 8–10, 12.
+    **DONE (Phase 2.3)** — `POST /workspaces/:id/switch`; the org-context/sole-membership
+    resolution chain lives in `resolveActiveWorkspace()`, used by both `GET /me` and the
+    switch endpoint.
 14. **Tenant-isolation tests** — the negative-test catalog (`multi-tenancy.md` §4,
     `identity-threat-model.md`) — depends on steps 8–11 existing to test against.
+    **DONE (Phase 2.3)** — see `phase-2-3-implementation-report.md` §13.
 15. **Security regression tests** — MFA policy (OD-06: required for OWNER/ADMIN and
     high-risk financial approval), step-up enforcement, worker authorization context
     (owner-accepted field set: `workspaceId`, `initiatingUserId`/actor, resource scope,
     action scope, `correlationId`, `jobId`), AI-authorization independence — depends on
     steps 8–14.
+    **PARTIALLY DONE (Phase 2.3)** — worker authorization context field set is carried by
+    every sync/reconciliation write (`correlationId`, actor, workspace, action all present
+    on every `AuditEvent` row). **Not done, explicitly out of Phase 2.3 scope**: MFA/
+    step-up enforcement (OD-06/OD-07) — no financial-approval flow exists yet for it to
+    gate (Phase 9 scope); AI-authorization independence has no AI tool calls yet to test
+    against (Phase 2.3 Hard Restrictions exclude AI). See known limitations,
+    `phase-2-3-implementation-report.md` §19.
 16. **Manual UAT** — depends on all preceding steps landing and passing their own tests.
+    **DONE (Phase 2.3, 2026-09-10)** — real Clerk development instance, Organizations
+    enabled; see `phase-2-3-implementation-report.md` §15.
 
 **Explicit non-dependency note:** Postgres RLS (OD-04, deferred to Phase 11) and building
 out per-membership permission overrides beyond the schema placeholder (OD-05) have no step

@@ -15,6 +15,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
   // When absent, every request resolves as unauthenticated — never as authenticated by
   // default — see apps/api/src/plugins/auth.ts.
   CLERK_SECRET_KEY: z.string().min(1).optional(),
+  // Optional for the same reason as CLERK_SECRET_KEY above — when absent, POST
+  // /webhooks/clerk rejects every request (never accepts an unverifiable webhook) rather
+  // than falling back to some other trust mechanism. See routes/webhooks-clerk.ts.
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
