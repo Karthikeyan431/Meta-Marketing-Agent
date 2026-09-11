@@ -235,8 +235,13 @@ production build has the same pre-existing, Windows-local-only `EPERM: symlink` 
 already documented in `phase-3-1-implementation-report.md` §16 and re-confirmed unrelated to
 this phase's changes (`apps/web` was not touched).
 
-CI run URL and commit SHA: recorded in this report's closing "record final green CI run"
-commit (see git history).
+**Green on the first push (commit `1c437583e630d0b580a99f8edcf75c5ca7773225`).** CI run
+[34607446210](https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34607446210)
+— `completed`/`success`, every stage passed, including the clean-database migration
+verification. Unlike Phase 3.2 (whose first push was red on a real concurrency defect — see
+`phase-3-2-implementation-report.md` §11), the analogous defect class this phase risked
+(§10's DEGRADED-connection gate bug) was caught by the local test suite before commit, not by
+CI after push.
 
 ## 14. Migrations
 
@@ -279,7 +284,9 @@ No unrelated files changed.
 
 ## 16. Commit SHA
 
-Recorded in the closing "record final green CI run" commit (see git history).
+- `1c437583e630d0b580a99f8edcf75c5ca7773225` — `feat(meta): implement Campaign/Ad Set/Ad
+synchronization (Phase 4.1)` (CI green on the first push)
+- This report's own closing "record final green CI run" commit (see git history for its SHA)
 
 ## 17. Known Limitations
 
