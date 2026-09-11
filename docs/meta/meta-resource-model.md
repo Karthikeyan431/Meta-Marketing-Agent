@@ -1,6 +1,6 @@
 # Meta Resource Model (Identifier Model + Ad Hierarchy)
 
-**Document ID:** META-107 | Version 1.1 | Status: §4's `Ad Account` field set implemented 2026-09-10 (Phase 3.2); Campaign/Ad Set/Ad/Creative remain conceptual, unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.2 (Ad Account, complete)
+**Document ID:** META-107 | Version 1.2 | Status: §4's `Ad Account` field set implemented (Phase 3.2); Campaign/Ad Set/Ad field sets implemented 2026-09-11 (Phase 4.1, read-only); Creative remains denormalized onto Ad, never its own table | Phase: 3A (Architecture Finalization, closed); Phase 3.2/4.1 (Implementation, complete)
 
 Consolidates `ai-marketing-manager-gate-5-docs/docs/06-meta/META_OBJECT_MODEL.md` (META-003)
 and `ai-marketing-manager-gate-3-docs/docs/04-data/SCHEMA_DESIGN.md` (DATA-003)'s existing

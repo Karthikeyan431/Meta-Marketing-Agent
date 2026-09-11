@@ -1,37 +1,7 @@
-import { Prisma, type PrismaClient, type AdAccount } from "@prisma/client";
+import type { PrismaClient, AdAccount } from "@prisma/client";
 import { recordAuditEvent } from "../identity/audit.js";
+import { withConflictRetry } from "../prisma-errors.js";
 import { AdAccountNotFoundError, AdAccountNotDiscoverableError } from "./errors.js";
-
-/** True for a Prisma error a concurrent-transaction retry can resolve: `P2002` (unique-
- *  constraint violation — two simultaneous first-time selections of the same external
- *  account racing each other) or `P2034` (write conflict/deadlock — Postgres's own
- *  serialization-failure signal, which can surface at any point during or at commit of an
- *  interactive transaction, not only at the exact statement that logically raced). Retrying
- *  the whole transaction, not just one statement, is required because a `P2034` is not
- *  necessarily attributable to a single call within the transaction callback. */
-function isRetryableConflict(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    (error.code === "P2002" || error.code === "P2034")
-  );
-}
-
-/** Retries an entire transaction attempt on a concurrency conflict (see
- *  `isRetryableConflict`) — each retry re-reads state fresh, so it naturally converges once
- *  the other concurrent writer has committed, rather than assuming which specific statement
- *  raced. Bounded so a genuine, non-transient failure still surfaces. */
-async function withConflictRetry<T>(attempt: () => Promise<T>, maxAttempts = 5): Promise<T> {
-  let lastError: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      return await attempt();
-    } catch (error) {
-      if (!isRetryableConflict(error)) throw error;
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
 
 /**
  * `GET /workspaces/:id/ad-accounts` (meta-api-contracts.md §1) — the persisted, previously-
@@ -50,6 +20,20 @@ export async function listAdAccountsByWorkspace(
     },
     orderBy: { selectedAt: "asc" },
   });
+}
+
+/**
+ * Every currently-`ACTIVE` selected Ad Account across every workspace — the one deliberate
+ * workspace-independent enumeration in this module, used only by the scheduled sync's own
+ * enumeration step (worker-authorization-contract.md §5's "workspace-independent job
+ * exception": enumerating is itself workspace-independent by nature; each *resulting* sync
+ * job is still individually workspace-scoped, never a global mutation). Never used to
+ * authorize or scope an actual sync — each job re-derives its own `workspaceId` boundary.
+ */
+export async function listAllActiveAdAccountsForScheduledSync(
+  prisma: PrismaClient,
+): Promise<AdAccount[]> {
+  return prisma.adAccount.findMany({ where: { status: "ACTIVE" } });
 }
 
 /** Resource-authorization lookup — `id` AND `workspaceId` in the same query

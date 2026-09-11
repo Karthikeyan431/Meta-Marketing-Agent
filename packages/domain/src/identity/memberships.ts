@@ -106,6 +106,21 @@ export async function findMembershipById(
   return prisma.workspaceMembership.findUnique({ where: { id } });
 }
 
+/** The workspace's current active OWNER — used to derive `SystemActorContext.
+ *  configuredByUserId` for a system-triggered job with no single human trigger (e.g. the
+ *  scheduled Meta sync, worker-authorization-contract.md §6): the OWNER is who's ultimately
+ *  accountable for the workspace's integrations being active. Every workspace has exactly
+ *  one OWNER by the already-enforced owner invariant (identity-owner-invariant.test.ts), so
+ *  this is expected to resolve for any workspace with an active connection. */
+export async function findActiveOwnerMembership(
+  prisma: PrismaClient,
+  workspaceId: string,
+): Promise<WorkspaceMembership | null> {
+  return prisma.workspaceMembership.findFirst({
+    where: { workspaceId, role: "OWNER", status: "ACTIVE" },
+  });
+}
+
 export interface MembershipWithWorkspace extends WorkspaceMembership {
   workspace: { id: string; name: string; status: string; clerkOrganizationId: string | null };
 }

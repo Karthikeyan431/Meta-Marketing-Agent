@@ -1,6 +1,6 @@
 # Meta Integration Implementation Sequence
 
-**Document ID:** META-120 | Version 1.4 | Status: Owner-Approved 2026-09-10; Phase 3.1 and Phase 3.2 (Discovery) implemented and real-UAT-verified 2026-09-10 | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2 (Implementation, complete)
+**Document ID:** META-120 | Version 1.5 | Status: Owner-Approved 2026-09-10; Phase 3.1, Phase 3.2 (Discovery), and Phase 4.1 (Sync) implemented and real-UAT-verified | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2/4.1 (Implementation, complete)
 
 ## 1. Phase Numbering (owner-decided 2026-09-10, binding — supersedes this document's prior
 
@@ -106,3 +106,35 @@ business discovery, ad-account discovery, selection, deselection, reselection-af
 deselection, and tenant isolation were all verified against the real, currently-authorized
 Meta Development-mode connection and its one real ad account. See
 `phase-3-2-implementation-report.md` for full detail.
+
+## 6. Phase 4.1 Status (2026-09-11)
+
+**Implementation: complete.** Per §1's table, this document's Phase 4.1 is "Campaign / Ad Set
+/ Ad Synchronization" — the governing task for this phase used that same label, so no naming
+discrepancy this time (unlike Phase 3.2/3.3 above). A real, scheduled + user-triggered sync
+worker (`workers/sync`) now pulls the campaign hierarchy for every selected `AdAccount`;
+read-only `Campaign`/`AdSet`/`Ad` API surface added. 32 new integration tests (15 real-DB
+worker tests + 17 API tests), zero regressions across the full existing suite (223 integration
+
+- 69 unit + 6 E2E). Meta's current documentation was re-verified fresh for Campaign/Ad Set/Ad
+  fields and endpoints immediately before implementation, including a live-confirmed finding
+  (budget fields are integer-subunit numeric strings) that shaped the storage type (`BigInt`,
+  never `Float`). This phase is also the first real implementation of `docs/identity/
+worker-authorization-contract.md` (previously a pure, uncalled contract) and the first real
+  caller of `SystemActorContext`/`assertSystemActorProvisioned()`.
+
+**Real Meta UAT is complete (2026-09-11)** — a real manual sync was triggered against the
+live Meta Development-mode connection and its one real ad account; the sync executed
+correctly end-to-end (real ~4-second round trip to the real Marketing API), correctly
+reporting zero campaigns (the real Development ad account has none — an honest result, not a
+fabricated one, per BR-013; no real campaign was created to force a non-empty result, per this
+project's standing "never spend money / never mutate real Meta state" constraint). The new
+read API correctly returned an empty list for the same real state. See
+`phase-4-1-implementation-report.md` for full detail, including one real design correction
+found during implementation (a DEGRADED connection was originally unable to ever attempt a
+sync, which would have made `meta-connection-health.md` §7's auto-recovery impossible).
+
+**Two items remain explicitly outstanding, carried forward, not silently dropped:**
+OD-3A-08's connection kill switch (flagged since Phase 3.2, still unrelated to any single
+phase's own scope) and `meta-architecture.md` §4's full capability model (still not required
+for correct error handling, which already works via the existing normalized-error path).

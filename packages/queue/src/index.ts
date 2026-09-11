@@ -29,3 +29,13 @@ export {
   type ClerkWebhookEventPayload,
   type ClerkReconciliationPayload,
 } from "./clerk-jobs.js";
+export {
+  META_SYNC_JOB_NAME,
+  metaSyncJobPayloadSchema,
+  META_SYNC_SCHEDULER_JOB_NAME,
+  metaSyncSchedulerPayloadSchema,
+  DEFAULT_META_SYNC_INTERVAL_MS,
+  META_SYNC_SCHEDULER_REPEAT_JOB_ID,
+  type MetaSyncJobPayload,
+  type MetaSyncSchedulerPayload,
+} from "./meta-sync-jobs.js";

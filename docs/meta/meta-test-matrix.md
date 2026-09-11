@@ -1,6 +1,6 @@
 # Meta Test Matrix
 
-**Document ID:** META-117 | Version 1.1 | Status: OAuth/Credentials/Workspace/Account/API/Security categories implemented (Phase 3.1/3.2); Sync/Webhook/AI categories remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2 (Implementation, complete for their own categories)
+**Document ID:** META-117 | Version 1.2 | Status: OAuth/Credentials/Workspace/Account/API/Security categories implemented (Phase 3.1/3.2); Sync category implemented 2026-09-11 (Phase 4.1); Webhook/AI categories remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2/4.1 (Implementation, complete for their own categories)
 
 ## 0. Implementation Status (Phase 3.2, 2026-09-10)
 
@@ -14,6 +14,21 @@ this matrix beyond its originally-listed categories since Phase 3.2 introduces t
 first true multi-writer race on a single logical resource. **Sync**, **Webhook**, and **AI**
 rows remain entirely unimplemented (Phase 4+/5+/AI-tool-phase scope, as this document already
 anticipated). See `phase-3-2-implementation-report.md` §9 for the full test list.
+
+## 0.1 Implementation Status (Phase 4.1, 2026-09-11)
+
+`tests/integration/worker-sync.test.ts` (15 tests) implements this matrix's **Sync** category
+in full: initial sync, retry (BullMQ propagation on a transient failure), duplicate/re-sync
+(idempotent upsert), missing/deleted resource (`EXTERNALLY_REMOVED` transition), out-of-order
+event (`sourceUpdatedAt`-guarded stale-write rejection), partial failure (per-item outcome
+tracking via `MetaSyncRun`). Also covers worker-authorization re-verification (the first real
+exercise of `worker-authorization-contract.md` §3/§4 against a real job), the system-actor
+path (§6), tenant isolation, and concurrency (the same category of real defect class Phase
+3.2 first found — see that phase's §11 — deliberately tested against a real Postgres instance,
+not mocked). `tests/integration/api-campaigns.test.ts` (17 tests) covers the sync-trigger
+route and the new read API's own authorization/tenant-isolation/security rows. **Webhook**
+and **AI** rows remain entirely unimplemented (Phase 5+/AI-tool-phase scope). See
+`phase-4-1-implementation-report.md` §9 for the full test list.
 
 Consolidates `ai-marketing-manager-gate-5-docs/docs/06-meta/META_TEST_STRATEGY.md` (META-009),
 `ai-marketing-manager-gate-9-testing-docs/docs/10-testing/META_INTEGRATION_TESTING.md`

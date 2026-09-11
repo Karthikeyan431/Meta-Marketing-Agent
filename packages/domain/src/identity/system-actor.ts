@@ -10,10 +10,11 @@ import { SystemActorNotProvisionedError } from "./errors.js";
  * distinct from any human's role) and Option 1 (an accountability chain back to the human
  * who configured the triggering rule).
  *
- * No code in this codebase constructs or consumes a `SystemActorContext` yet — no
- * autonomous/scheduled mutation pipeline exists (Phase 2.4 scope). This type exists so
- * whichever future phase builds one has a ready, owner-approved contract instead of
- * re-deriving this design, per OD-2.4A-01's own stated purpose.
+ * First real caller: `workers/sync`'s scheduled Meta sync job (Phase 4.1, 2026-09-11) —
+ * `configuredByUserId` is the workspace's current active OWNER, resolved fresh at execution
+ * time via `findActiveOwnerMembership()`. This remains a read-only sync context (never a
+ * mutation of Meta state), so it does not yet exercise the "system-triggered mutation"
+ * scenario OD-2.4A-01 originally anticipated — that remains a future phase's first real case.
  */
 export interface SystemActorContext {
   /** The workspace this system actor may act within — never workspace-independent for a

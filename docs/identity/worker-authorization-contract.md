@@ -1,13 +1,26 @@
 # Worker Authorization Contract
 
-**Document ID:** IDENT-019 | Version 1.1 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`) | Phase: 2.4A (Architecture Finalization), amended Phase 2.4 (2026-09-10)
+**Document ID:** IDENT-019 | Version 1.2 | Status: Approved (Owner Decision — see `phase-2-4a-decisions.md`); §2/§3/§6 implemented and real-caller-verified 2026-09-11 (Phase 4.1) | Phase: 2.4A (Architecture Finalization), amended Phase 2.4; implemented Phase 4.1
 
 Formalizes `authorization.md` §4 and §10 into a complete, implementation-ready contract for
-every background job. **No new worker job type is implemented by this document** — the only
-worker with real job processors today is `workers/webhook` (Clerk identity sync, Phase 2.3);
-the other five (sync, insights, optimization, report, maintenance-beyond-its-example-job)
-remain placeholder-only. This document exists so whichever phase implements their real job
-processors does not re-derive this design.
+every background job. **No new worker job type was implemented by this document itself** — as
+of Phase 2.4A/2.4, the only worker with real job processors was `workers/webhook` (Clerk
+identity sync, Phase 2.3); the other five (sync, insights, optimization, report,
+maintenance-beyond-its-example-job) were placeholder-only. This document existed so whichever
+phase implemented their real job processors would not re-derive this design.
+
+**Phase 4.1 (2026-09-11) is that phase, for `workers/sync`.** `workers/sync/src/processor.ts`
+implements this contract's full canonical job payload (§2), execution-time re-verification
+(§3 — re-resolving `initiatingActor`, re-checking membership/permission, re-verifying the
+`AdAccount`/`MetaConnection` in `resourceScope`, all fresh at execution time, never trusting
+the enqueue-time snapshot), and is the first real caller of `SystemActorContext`/
+`assertSystemActorProvisioned()` (§6) for the scheduled trigger — `configuredByUserId` is
+derived from the workspace's current active OWNER at execution time, a Phase 4.1
+implementation decision for the one sub-question §6 itself left open (which specific human a
+system-triggered job with no direct human trigger is accountable to). See
+`phase-4-1-implementation-report.md` §8 for the full implementation record and its own real
+integration tests exercising §4's revocation/retry table (membership removed between enqueue
+and execution) against a real job, not a mocked one.
 
 ## 1. The Non-Negotiable Principle (restated, not re-decided)
 

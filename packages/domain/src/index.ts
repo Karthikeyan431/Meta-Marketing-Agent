@@ -5,7 +5,11 @@ export {
   type DbHealthResult,
 } from "./db.js";
 
-export { isUniqueConstraintViolation } from "./prisma-errors.js";
+export {
+  isUniqueConstraintViolation,
+  isRetryableConflict,
+  withConflictRetry,
+} from "./prisma-errors.js";
 
 export {
   ROLES,
@@ -40,4 +44,11 @@ export type {
   MetaConnectionStatus,
   AdAccount,
   AdAccountSelectionStatus,
+  Campaign,
+  AdSet,
+  Ad,
+  SyncedResourceLifecycleStatus,
+  MetaSyncRun,
+  SyncTriggerType,
+  SyncRunStatus,
 } from "@prisma/client";

@@ -352,9 +352,15 @@ importers:
       '@ai-marketing-manager/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ai-marketing-manager/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@ai-marketing-manager/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      bullmq:
+        specifier: ^5.34.5
+        version: 5.81.4
       tsx:
         specifier: ^4.19.2
         version: 4.23.13

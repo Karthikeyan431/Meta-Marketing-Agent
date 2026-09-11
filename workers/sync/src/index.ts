@@ -6,9 +6,13 @@ import {
 import {
   bootstrapWorker,
   closeRedisConnection,
-  createPlaceholderProcessor,
+  createQueue,
+  META_SYNC_SCHEDULER_JOB_NAME,
+  META_SYNC_SCHEDULER_REPEAT_JOB_ID,
 } from "@ai-marketing-manager/queue";
+import { disconnectDatabase } from "@ai-marketing-manager/domain";
 import { loadWorkerEnv } from "./env.js";
+import { createSyncProcessor } from "./processor.js";
 
 const QUEUE_NAME = "sync";
 
@@ -24,9 +28,35 @@ async function main() {
     queueName: QUEUE_NAME,
     redisUrl: env.REDIS_URL,
     logger,
-    processor: createPlaceholderProcessor(QUEUE_NAME, logger),
+    processor: createSyncProcessor({
+      logger,
+      redisUrl: env.REDIS_URL,
+      metaApiVersion: env.META_API_VERSION,
+      metaCredentialEncryptionKey: env.META_CREDENTIAL_ENCRYPTION_KEY,
+    }),
     concurrency: env.WORKER_CONCURRENCY,
   });
+
+  // Optional by design (Hard Restrictions: never a real Meta credential in CI) — the
+  // scheduled sync is simply not registered (logged, not fatal) when absent, mirroring
+  // workers/webhook's identical CLERK_SECRET_KEY-conditional registration. A manually
+  // triggered sync job would also no-op via the processor's own config gate.
+  if (env.META_CREDENTIAL_ENCRYPTION_KEY) {
+    const syncQueue = createQueue(QUEUE_NAME, env.REDIS_URL);
+    await syncQueue.add(
+      META_SYNC_SCHEDULER_JOB_NAME,
+      {},
+      {
+        repeat: { every: env.META_SYNC_INTERVAL_MS },
+        jobId: META_SYNC_SCHEDULER_REPEAT_JOB_ID,
+      },
+    );
+    logger.info({ intervalMs: env.META_SYNC_INTERVAL_MS }, "meta sync schedule registered");
+  } else {
+    logger.warn(
+      "META_CREDENTIAL_ENCRYPTION_KEY not configured — meta sync schedule not registered",
+    );
+  }
 
   const healthServer = createHealthServer({
     port: env.HEALTH_PORT,
@@ -39,6 +69,7 @@ async function main() {
     logger,
     handlers: [
       async () => shutdown(),
+      async () => disconnectDatabase(),
       async () => closeRedisConnection(),
       async () => new Promise<void>((resolve) => healthServer.close(() => resolve())),
     ],

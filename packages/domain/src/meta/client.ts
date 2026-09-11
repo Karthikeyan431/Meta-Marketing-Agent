@@ -1,8 +1,9 @@
 /**
- * Minimal Meta Graph API client for Phase 3.1 (OAuth + connection lifecycle) and Phase 3.2
- * (Business/Ad Account discovery) — meta-adapter-contract.md's full interface (listCampaigns,
- * getInsights, etc.) is NOT implemented here; this file implements only what OAuth/connection
- * establishment and discovery need. Live-verified endpoints/parameters:
+ * Meta Graph API client for Phase 3.1 (OAuth + connection lifecycle), Phase 3.2 (Business/Ad
+ * Account discovery), and Phase 4.1 (Campaign/Ad Set/Ad sync) — meta-adapter-contract.md's
+ * remaining methods (getInsights, createCampaign, updateCampaign, etc.) are NOT implemented
+ * here; this file implements only OAuth/connection establishment, discovery, and read-only
+ * campaign-hierarchy sync. Live-verified endpoints/parameters:
  * - OAuth (2026-09-10, docs/meta/meta-oauth.md §1): developers.facebook.com/docs/
  *   facebook-login/guides/advanced/manual-flow/, .../documentation/facebook-login/guides/
  *   access-tokens/get-long-lived/.
@@ -10,16 +11,26 @@
  *   facebook.com/docs/graph-api/reference/user/ (`businesses` edge), .../docs/marketing-api/
  *   reference/ad-account (fields, `account_status` values), `me/adaccounts` endpoint usage,
  *   .../docs/graph-api/results (cursor pagination).
+ * - Campaign/Ad Set/Ad sync (2026-09-11, docs/meta/phase-4-1-implementation-report.md §2):
+ *   .../docs/marketing-api/reference/ad-campaign-group (Campaign fields, budget-as-integer-
+ *   subunit-string representation), .../reference/ad-campaign (Ad Set fields), .../reference/
+ *   adgroup (Ad fields).
+ *
+ * Lives in `packages/domain` (moved here from `apps/api/src/plugins/meta-client.ts` in
+ * Phase 4.1) rather than `apps/api` because `workers/sync`'s real job processor is this
+ * phase's first caller that isn't an API route — meta-architecture.md §1 design principle 3
+ * ("every Meta API call goes through exactly one adapter — no route, worker, or AI tool
+ * constructs a raw Meta HTTP request itself") requires one importable adapter, not a
+ * route-private one duplicated into the worker.
  *
  * Provider-specific response shapes never leak past this file (meta-adapter-contract.md
  * §2) — every function returns an application-normalized shape. `listBusinesses`/
- * `listAdAccounts` are a deliberate, documented extension beyond meta-adapter-contract.md's
- * originally-reconciled `getBusiness(connectionRef, externalBusinessId)` (a single-object
- * lookup by an already-known ID) — discovery needs a LIST of businesses/accounts the token
- * can access, which that single-lookup shape cannot express; this is a Phase 3.2
- * implementation decision, not an architecture gap, exactly like meta-oauth.md §3's state-
- * storage mechanism was left open as "a Phase 3.1 implementation decision" by the same
- * document set.
+ * `listAdAccounts` (Phase 3.2) and `listCampaigns`/`listAdSets`/`listAds` (Phase 4.1) are a
+ * deliberate, documented extension beyond meta-adapter-contract.md's originally-reconciled
+ * single-object `getX(connectionRef, externalId)` lookups — discovery/sync need LISTS, which
+ * that shape cannot express; this is an implementation decision, not an architecture gap,
+ * exactly like meta-oauth.md §3's state-storage mechanism was left open as "a Phase 3.1
+ * implementation decision" by the same document set.
  */
 
 const AUTHORIZE_BASE_URL = "https://www.facebook.com";
@@ -329,6 +340,218 @@ export async function listAdAccounts(params: {
           business && typeof business["id"] === "string" && typeof business["name"] === "string"
             ? { id: business["id"], name: business["name"] }
             : null,
+      };
+    });
+}
+
+/** Meta returns budget/spend fields as numeric strings representing an integer value in the
+ *  currency's subunit (e.g. cents) — live-verified 2026-09-11, `developers.facebook.com/docs/
+ *  marketing-api/reference/ad-campaign-group`. Parsed to `BigInt`, never a JS `number`/
+ *  `Float` (money-handling rule) — `null` for anything absent or unparseable, never `0` (a
+ *  missing budget is not the same fact as a zero budget). */
+function parseOptionalBigInt(value: unknown): bigint | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
+
+/** Meta's `*_time` fields are ISO-8601-shaped datetime strings — `null` for anything absent
+ *  or unparseable, never a guessed date (an adapter-layer response-validation boundary,
+ *  meta-adapter-contract.md §2 / meta-threat-model.md #16). */
+function parseOptionalDate(value: unknown): Date | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export interface MetaCampaignSummary {
+  id: string;
+  name: string;
+  status: string;
+  effectiveStatus: string;
+  objective: string;
+  dailyBudget: bigint | null;
+  lifetimeBudget: bigint | null;
+  budgetRemaining: bigint | null;
+  startTime: Date | null;
+  stopTime: Date | null;
+  updatedTime: Date | null;
+}
+
+/** Campaigns under an ad account (`meta-adapter-contract.md` §1's `listCampaigns`). Live-
+ *  verified 2026-09-11, `developers.facebook.com/docs/marketing-api/reference/
+ *  ad-campaign-group`: `GET /act_{ad_account_id}/campaigns`. */
+export async function listCampaigns(params: {
+  accessToken: string;
+  apiVersion: string;
+  /** Meta's own `act_{id}` form (matches `AdAccount.externalId` exactly). */
+  externalAdAccountId: string;
+}): Promise<MetaCampaignSummary[]> {
+  const url = new URL(
+    `/${params.apiVersion}/${params.externalAdAccountId}/campaigns`,
+    GRAPH_BASE_URL,
+  );
+  url.searchParams.set("access_token", params.accessToken);
+  url.searchParams.set(
+    "fields",
+    "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,updated_time",
+  );
+  url.searchParams.set("limit", "100");
+
+  const rows = await fetchAllPages<Record<string, unknown>>(url);
+  return rows
+    .filter(
+      (
+        row,
+      ): row is Record<string, unknown> & {
+        id: string;
+        name: string;
+        status: string;
+        effective_status: string;
+        objective: string;
+      } =>
+        typeof row["id"] === "string" &&
+        typeof row["name"] === "string" &&
+        typeof row["status"] === "string" &&
+        typeof row["effective_status"] === "string" &&
+        typeof row["objective"] === "string",
+    )
+    .map((row) => ({
+      id: row["id"],
+      name: row["name"],
+      status: row["status"],
+      effectiveStatus: row["effective_status"],
+      objective: row["objective"],
+      dailyBudget: parseOptionalBigInt(row["daily_budget"]),
+      lifetimeBudget: parseOptionalBigInt(row["lifetime_budget"]),
+      budgetRemaining: parseOptionalBigInt(row["budget_remaining"]),
+      startTime: parseOptionalDate(row["start_time"]),
+      stopTime: parseOptionalDate(row["stop_time"]),
+      updatedTime: parseOptionalDate(row["updated_time"]),
+    }));
+}
+
+export interface MetaAdSetSummary {
+  id: string;
+  name: string;
+  status: string;
+  effectiveStatus: string;
+  optimizationGoal: string | null;
+  billingEvent: string | null;
+  bidStrategy: string | null;
+  dailyBudget: bigint | null;
+  lifetimeBudget: bigint | null;
+  startTime: Date | null;
+  endTime: Date | null;
+  updatedTime: Date | null;
+}
+
+/** Ad sets under a campaign (`meta-adapter-contract.md` §1's `listAdSets(connectionRef,
+ *  externalCampaignId, cursor?)` — already-decided shape). Live-verified 2026-09-11,
+ *  `developers.facebook.com/docs/marketing-api/reference/ad-campaign`: `GET /{campaign_id}/
+ *  adsets`. */
+export async function listAdSets(params: {
+  accessToken: string;
+  apiVersion: string;
+  externalCampaignId: string;
+}): Promise<MetaAdSetSummary[]> {
+  const url = new URL(`/${params.apiVersion}/${params.externalCampaignId}/adsets`, GRAPH_BASE_URL);
+  url.searchParams.set("access_token", params.accessToken);
+  url.searchParams.set(
+    "fields",
+    "id,name,status,effective_status,optimization_goal,billing_event,bid_strategy,daily_budget,lifetime_budget,start_time,end_time,updated_time",
+  );
+  url.searchParams.set("limit", "100");
+
+  const rows = await fetchAllPages<Record<string, unknown>>(url);
+  return rows
+    .filter(
+      (
+        row,
+      ): row is Record<string, unknown> & {
+        id: string;
+        name: string;
+        status: string;
+        effective_status: string;
+      } =>
+        typeof row["id"] === "string" &&
+        typeof row["name"] === "string" &&
+        typeof row["status"] === "string" &&
+        typeof row["effective_status"] === "string",
+    )
+    .map((row) => ({
+      id: row["id"],
+      name: row["name"],
+      status: row["status"],
+      effectiveStatus: row["effective_status"],
+      optimizationGoal:
+        typeof row["optimization_goal"] === "string" ? row["optimization_goal"] : null,
+      billingEvent: typeof row["billing_event"] === "string" ? row["billing_event"] : null,
+      bidStrategy: typeof row["bid_strategy"] === "string" ? row["bid_strategy"] : null,
+      dailyBudget: parseOptionalBigInt(row["daily_budget"]),
+      lifetimeBudget: parseOptionalBigInt(row["lifetime_budget"]),
+      startTime: parseOptionalDate(row["start_time"]),
+      endTime: parseOptionalDate(row["end_time"]),
+      updatedTime: parseOptionalDate(row["updated_time"]),
+    }));
+}
+
+export interface MetaAdSummary {
+  id: string;
+  name: string;
+  status: string;
+  effectiveStatus: string;
+  creative: { id: string; name: string | null } | null;
+  updatedTime: Date | null;
+}
+
+/** Ads under an ad set (`meta-adapter-contract.md` §1's `listAds`). Live-verified
+ *  2026-09-11, `developers.facebook.com/docs/marketing-api/reference/adgroup`:
+ *  `GET /{adset_id}/ads`. */
+export async function listAds(params: {
+  accessToken: string;
+  apiVersion: string;
+  externalAdSetId: string;
+}): Promise<MetaAdSummary[]> {
+  const url = new URL(`/${params.apiVersion}/${params.externalAdSetId}/ads`, GRAPH_BASE_URL);
+  url.searchParams.set("access_token", params.accessToken);
+  url.searchParams.set("fields", "id,name,status,effective_status,creative{id,name},updated_time");
+  url.searchParams.set("limit", "100");
+
+  const rows = await fetchAllPages<Record<string, unknown>>(url);
+  return rows
+    .filter(
+      (
+        row,
+      ): row is Record<string, unknown> & {
+        id: string;
+        name: string;
+        status: string;
+        effective_status: string;
+      } =>
+        typeof row["id"] === "string" &&
+        typeof row["name"] === "string" &&
+        typeof row["status"] === "string" &&
+        typeof row["effective_status"] === "string",
+    )
+    .map((row) => {
+      const creative = row["creative"] as Record<string, unknown> | undefined;
+      return {
+        id: row["id"],
+        name: row["name"],
+        status: row["status"],
+        effectiveStatus: row["effective_status"],
+        creative:
+          creative && typeof creative["id"] === "string"
+            ? {
+                id: creative["id"],
+                name: typeof creative["name"] === "string" ? creative["name"] : null,
+              }
+            : null,
+        updatedTime: parseOptionalDate(row["updated_time"]),
       };
     });
 }

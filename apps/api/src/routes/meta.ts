@@ -9,6 +9,7 @@ import {
   selectAdAccountsRequestSchema,
   selectAdAccountsResponseSchema,
   deselectAdAccountResponseSchema,
+  syncTriggerResponseSchema,
   successEnvelope,
   errorEnvelope,
   type MetaConnectionSummary,
@@ -30,6 +31,14 @@ import {
   MetaConnectionNotFoundError,
   AdAccountNotFoundError,
   AdAccountNotDiscoverableError,
+  buildMetaAuthorizationUrl,
+  exchangeCodeForToken,
+  exchangeForLongLivedToken,
+  validateMetaToken,
+  getMetaIdentity,
+  listBusinesses,
+  listAdAccounts,
+  MetaApiError,
   type MetaConnection,
   type AdAccount,
   type RoleName,
@@ -40,17 +49,12 @@ import {
   requirePermission,
 } from "../plugins/authorization.js";
 import { validateBody } from "../plugins/validation.js";
-import {
-  buildMetaAuthorizationUrl,
-  exchangeCodeForToken,
-  exchangeForLongLivedToken,
-  validateMetaToken,
-  getMetaIdentity,
-  listBusinesses,
-  listAdAccounts,
-  MetaApiError,
-} from "../plugins/meta-client.js";
 import { createOAuthState, consumeOAuthState } from "../plugins/meta-oauth-state.js";
+import {
+  createQueue,
+  META_SYNC_JOB_NAME,
+  type MetaSyncJobPayload,
+} from "@ai-marketing-manager/queue";
 import type { ApiEnv } from "../env.js";
 
 export interface MetaRouteOptions {
@@ -843,4 +847,51 @@ export default async function metaRoute(app: FastifyInstance, opts: MetaRouteOpt
       }
     },
   );
+
+  /**
+   * Manual "sync now" trigger (Phase 4.1, meta-api-contracts.md §1 — already named by this
+   * document; OD-3A-06 requires this as additive to, never a replacement for, the 30-minute
+   * scheduled sync `workers/sync` registers itself). `meta_connection.read` — triggering a
+   * sync is a read-adjacent operation on already-authorized data, not a Meta-side mutation
+   * (meta-api-contracts.md §2's own classification, unchanged). Enqueues one job per
+   * currently-selected Ad Account — never a single "sync the whole workspace" job, matching
+   * the worker's own per-account `resourceScope`/locking granularity.
+   */
+  app.post<{ Params: { id: string } }>("/workspaces/:id/meta/sync", async (request, reply) => {
+    const user = await requireAuth(request);
+    const { workspace, membership } = await requireWorkspaceMembership(user, request.params.id);
+    requirePermission(membership, "meta_connection.read");
+
+    const prisma = getPrismaClient();
+    const adAccounts = await listAdAccountsByWorkspace(prisma, workspace.id);
+
+    const queue = createQueue("sync", opts.env.REDIS_URL);
+    for (const adAccount of adAccounts) {
+      const payload: MetaSyncJobPayload = {
+        workspaceId: workspace.id,
+        adAccountId: adAccount.id,
+        initiatingActor: { kind: "user", userId: user.id },
+        triggerType: "MANUAL",
+        correlationId: request.requestId,
+      };
+      await queue.add(META_SYNC_JOB_NAME, payload);
+    }
+
+    if (adAccounts.length > 0) {
+      await recordAuditEvent(prisma, {
+        workspaceId: workspace.id,
+        actorType: "USER",
+        actorId: user.id,
+        eventType: "meta_sync.triggered",
+        resourceType: "meta_connection",
+        action: "sync",
+        outcome: "SUCCESS",
+        correlationId: request.requestId,
+        metadata: { adAccountCount: adAccounts.length },
+      });
+    }
+
+    const body = syncTriggerResponseSchema.parse({ enqueued: adAccounts.length });
+    reply.code(200).send(successEnvelope(body, { requestId: request.requestId }));
+  });
 }

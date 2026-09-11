@@ -145,6 +145,99 @@ export async function disconnectMetaConnection(
   });
 }
 
+export type ConnectionHealthFailureKind = "auth" | "transient";
+
+/**
+ * Reactive connection-health transition (meta-connection-health.md §2's "Reactive" path,
+ * §3's DEGRADED-vs-REAUTH_REQUIRED distinction) — Phase 4.1's sync worker is the first real
+ * caller. An auth-shaped failure (`kind: "auth"`) moves the connection to
+ * `REAUTH_REQUIRED`; a transient failure (`kind: "transient"`) moves it to `DEGRADED` only
+ * (never immediately to `REAUTH_REQUIRED`, per §3 — avoids notification noise for ordinary
+ * provider hiccups). A `DISCONNECTED` connection is never resurrected by a failure (a human
+ * must reconnect); a no-op transition (already at the target status) writes no redundant
+ * audit event. Only the proactive scheduled health check (§2's other path) and user
+ * notification (§4, product/UI scope) remain unbuilt — out of Phase 4.1's own scope.
+ */
+export async function recordConnectionHealthFailure(
+  prisma: PrismaClient,
+  input: {
+    workspaceId: string;
+    kind: ConnectionHealthFailureKind;
+    /** A normalized failure category (`classifyMetaApiFailure`'s output) — never a raw Meta
+     *  error body (meta-error-model.md §5). */
+    reason: string;
+    correlationId?: string | null;
+  },
+): Promise<MetaConnection | null> {
+  const existing = await prisma.metaConnection.findUnique({
+    where: { workspaceId: input.workspaceId },
+  });
+  if (!existing || existing.status === "DISCONNECTED") return existing;
+
+  const newStatus = input.kind === "auth" ? "REAUTH_REQUIRED" : "DEGRADED";
+  if (existing.status === newStatus) return existing;
+
+  const connection = await prisma.metaConnection.update({
+    where: { workspaceId: input.workspaceId },
+    data: { status: newStatus, errorState: input.reason },
+  });
+
+  await recordAuditEvent(prisma, {
+    workspaceId: input.workspaceId,
+    actorType: "SYSTEM",
+    actorId: "meta-sync-worker",
+    eventType: "meta_connection.health_degraded",
+    resourceType: "meta_connection",
+    resourceId: connection.id,
+    action: "health_transition",
+    outcome: "SUCCESS",
+    correlationId: input.correlationId ?? null,
+    metadata: { previousStatus: existing.status, newStatus, reason: input.reason },
+  });
+
+  return connection;
+}
+
+/**
+ * Records a successful real Meta API call (`lastSuccessfulApiCallAt`, distinct from
+ * `lastValidatedAt` — a real operation, not just a health probe) and auto-recovers a
+ * `DEGRADED` connection back to `CONNECTED` (meta-connection-health.md §7 — "recovery is
+ * automatic... requiring no user action"). Never auto-recovers `REAUTH_REQUIRED` (a real
+ * auth failure needs a real reconnect) or `DISCONNECTED`.
+ */
+export async function recordConnectionHealthSuccess(
+  prisma: PrismaClient,
+  workspaceId: string,
+): Promise<MetaConnection | null> {
+  const existing = await prisma.metaConnection.findUnique({ where: { workspaceId } });
+  if (!existing || existing.status === "DISCONNECTED") return existing;
+
+  const wasDegraded = existing.status === "DEGRADED";
+  const connection = await prisma.metaConnection.update({
+    where: { workspaceId },
+    data: {
+      lastSuccessfulApiCallAt: new Date(),
+      ...(wasDegraded ? { status: "CONNECTED" as const, errorState: null } : {}),
+    },
+  });
+
+  if (wasDegraded) {
+    await recordAuditEvent(prisma, {
+      workspaceId,
+      actorType: "SYSTEM",
+      actorId: "meta-sync-worker",
+      eventType: "meta_connection.health_recovered",
+      resourceType: "meta_connection",
+      resourceId: connection.id,
+      action: "health_transition",
+      outcome: "SUCCESS",
+      metadata: { previousStatus: "DEGRADED", newStatus: "CONNECTED" },
+    });
+  }
+
+  return connection;
+}
+
 /**
  * Decrypts a connection's stored credential — only ever called from the Meta adapter layer
  * (meta-token-security.md §2's "only the Meta integration service" rule). Throws if the

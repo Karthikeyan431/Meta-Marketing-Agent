@@ -16,10 +16,17 @@
 // "do not persist businesses automatically unless the approved data model requires it" — it
 // does not; Business display metadata is denormalized onto AdAccount instead).
 //
+// Phase 4.1 (Core Meta Data — Campaign/Ad Set/Ad Synchronization) — see
+// docs/meta/meta-sync.md, docs/meta/meta-resource-model.md (design) and
+// docs/meta/phase-4-1-implementation-report.md (this implementation). Adds Campaign, AdSet,
+// Ad (read-only synced data, no mutation capability — OD-3A-09 unchanged) and MetaSyncRun (a
+// durable per-sync-pass outcome record, meta-sync.md §4). No separate Creative table —
+// denormalized onto Ad, same reasoning as Phase 3.2's Business-onto-AdAccount denormalization.
+//
 // Deliberately NOT modeled here (per meta-architecture.md and this phase's own Hard
-// Restrictions): campaigns, ad_sets, ads, creatives, insights, webhook_events,
+// Restrictions): creatives (as their own table), insights, webhook_events,
 // conversations, messages, ai_runs, ai_tool_calls, actions, approvals, goals,
-// optimization_*, reports — all deferred to the phases that own them (Phase 4+). AuditEvent
+// optimization_*, reports — all deferred to the phases that own them (Phase 4.2+). AuditEvent
 // below is scoped ONLY to identity/workspace lifecycle events plus Meta connection lifecycle
 // events (identity-api-contracts.md §3, meta-architecture.md §5), not the full future
 // business audit system.
@@ -125,6 +132,10 @@ model Workspace {
   auditEvents    AuditEvent[]
   metaConnection MetaConnection?
   adAccounts     AdAccount[]
+  campaigns      Campaign[]
+  adSets         AdSet[]
+  ads            Ad[]
+  metaSyncRuns   MetaSyncRun[]
 
   @@map("workspaces")
 }
@@ -340,6 +351,8 @@ model AdAccount {
 
   workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   metaConnection MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  campaigns      Campaign[]
+  syncRuns       MetaSyncRun[]
 
   /// The mechanical tenant-isolation/deduplication rule (meta-resource-model.md §2): the same
   /// Meta external ID can exist independently in two different workspaces without collision,
@@ -349,6 +362,179 @@ model AdAccount {
   @@index([workspaceId, status])
   @@index([metaConnectionId])
   @@map("ad_accounts")
+}
+
+/// Our own soft lifecycle status for a synced Campaign/AdSet/Ad row (meta-resource-model.md
+/// §5) — distinct from Meta's own `status`/`effectiveStatus` fields (plain strings, since
+/// Meta's own value sets are not fixed forever — meta-resource-model.md's normalization
+/// discipline, identical reasoning to AdAccount.accountStatus). `EXTERNALLY_REMOVED` never
+/// deletes the row — historical Insights association (a future phase) must survive.
+enum SyncedResourceLifecycleStatus {
+  ACTIVE
+  EXTERNALLY_REMOVED
+}
+
+/// A workspace-authorized Meta Campaign (meta-resource-model.md §3-4, Phase 4.1). Every
+/// lookup is scoped `workspace_id + external_id` — the external Meta ID is never an
+/// authorization key on its own (meta-threat-model.md #7-#8), identical shape to AdAccount.
+model Campaign {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  adAccountId String @map("ad_account_id") @db.Uuid
+
+  /// Meta's own campaign ID — external identity only, never an authorization key on its own.
+  externalId      String @map("external_id")
+  name            String
+  /// Meta's own `status`/`effective_status` — plain strings (see enum doc comment above).
+  status          String
+  effectiveStatus String @map("effective_status")
+  objective       String
+
+  /// Meta returns these as numeric strings representing an integer value in the currency's
+  /// subunit (e.g. cents) — live-verified, `developers.facebook.com/docs/marketing-api/
+  /// reference/ad-campaign-group`. Stored as `BigInt`, never `Float` (money-handling rule).
+  dailyBudget     BigInt? @map("daily_budget")
+  lifetimeBudget  BigInt? @map("lifetime_budget")
+  budgetRemaining BigInt? @map("budget_remaining")
+
+  startTime       DateTime? @map("start_time")
+  stopTime        DateTime? @map("stop_time")
+  /// Meta's own `updated_time` — used to detect/resolve out-of-order sync writes (never a
+  /// blind overwrite — meta-threat-model.md #15's reconciliation principle, applied to sync).
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+
+  lifecycleStatus SyncedResourceLifecycleStatus @default(ACTIVE) @map("lifecycle_status")
+  lastSyncedAt    DateTime                      @map("last_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  adSets    AdSet[]
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, lifecycleStatus])
+  @@index([adAccountId])
+  @@map("campaigns")
+}
+
+/// A workspace-authorized Meta Ad Set (meta-resource-model.md §3-4, Phase 4.1). Same shape as
+/// Campaign — internal `campaignId` parent reference (never only the external parent ID, per
+/// meta-resource-model.md §3), workspace-scoped external-ID uniqueness.
+model AdSet {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  campaignId  String @map("campaign_id") @db.Uuid
+
+  externalId       String  @map("external_id")
+  name             String
+  status           String
+  effectiveStatus  String  @map("effective_status")
+  optimizationGoal String? @map("optimization_goal")
+  billingEvent     String? @map("billing_event")
+  bidStrategy      String? @map("bid_strategy")
+
+  dailyBudget    BigInt? @map("daily_budget")
+  lifetimeBudget BigInt? @map("lifetime_budget")
+
+  startTime       DateTime? @map("start_time")
+  endTime         DateTime? @map("end_time")
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+
+  lifecycleStatus SyncedResourceLifecycleStatus @default(ACTIVE) @map("lifecycle_status")
+  lastSyncedAt    DateTime                      @map("last_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads       Ad[]
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, lifecycleStatus])
+  @@index([campaignId])
+  @@map("ad_sets")
+}
+
+/// A workspace-authorized Meta Ad (meta-resource-model.md §3-4, Phase 4.1). Creative is
+/// denormalized onto the Ad row (`creativeExternalId`/`creativeName`) rather than a separate
+/// `Creative` table — Creative is immutable on Meta's side and not independently useful yet
+/// (identical reasoning to Phase 3.2's Business denormalization onto AdAccount).
+model Ad {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  adSetId     String @map("ad_set_id") @db.Uuid
+
+  externalId      String @map("external_id")
+  name            String
+  status          String
+  effectiveStatus String @map("effective_status")
+
+  creativeExternalId String? @map("creative_external_id")
+  creativeName       String? @map("creative_name")
+
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+
+  lifecycleStatus SyncedResourceLifecycleStatus @default(ACTIVE) @map("lifecycle_status")
+  lastSyncedAt    DateTime                      @map("last_synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adSet     AdSet     @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, lifecycleStatus])
+  @@index([adSetId])
+  @@map("ads")
+}
+
+enum SyncTriggerType {
+  MANUAL
+  SCHEDULED
+}
+
+enum SyncRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}
+
+/// A durable, queryable record of one sync pass (meta-sync.md §4's "every item must have an
+/// explicit outcome" — this is the summary-level record; individual item failures are
+/// additionally audited, not stored per-item here, matching this codebase's existing
+/// "don't audit/store every harmless success" discipline). Never contains a raw Meta error
+/// body — `errorSummary` is a normalized category only (meta-error-model.md §5).
+model MetaSyncRun {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  adAccountId String @map("ad_account_id") @db.Uuid
+
+  triggerType SyncTriggerType @map("trigger_type")
+  status      SyncRunStatus   @default(RUNNING)
+
+  campaignsSynced Int @default(0) @map("campaigns_synced")
+  adSetsSynced    Int @default(0) @map("ad_sets_synced")
+  adsSynced       Int @default(0) @map("ads_synced")
+  itemsFailed     Int @default(0) @map("items_failed")
+
+  errorSummary String? @map("error_summary")
+
+  correlationId String? @map("correlation_id")
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, startedAt])
+  @@index([adAccountId, startedAt])
+  @@map("meta_sync_runs")
 }
 
 /// Minimal event envelope for webhook idempotency — identity-sync.md §2 step 3/6. Keyed by

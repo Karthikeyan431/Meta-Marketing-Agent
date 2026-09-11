@@ -88,3 +88,27 @@ export {
   type SelectAdAccountsResponse,
   type DeselectAdAccountResponse,
 } from "./meta.js";
+
+export {
+  syncTriggerResponseSchema,
+  syncedResourceLifecycleStatusSchema,
+  campaignSummarySchema,
+  listCampaignsResponseSchema,
+  getCampaignResponseSchema,
+  adSetSummarySchema,
+  listAdSetsResponseSchema,
+  getAdSetResponseSchema,
+  adSummarySchema,
+  listAdsResponseSchema,
+  getAdResponseSchema,
+  type SyncTriggerResponse,
+  type CampaignSummary,
+  type ListCampaignsResponse,
+  type GetCampaignResponse,
+  type AdSetSummary,
+  type ListAdSetsResponse,
+  type GetAdSetResponse,
+  type AdSummary,
+  type ListAdsResponse,
+  type GetAdResponse,
+} from "./campaigns.js";

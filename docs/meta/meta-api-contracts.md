@@ -1,6 +1,6 @@
 # Meta API Contracts
 
-**Document ID:** META-116 | Version 1.1 | Status: Connection-lifecycle rows implemented (Phase 3.1); discovery/ad-account rows implemented 2026-09-10 (Phase 3.2); sync/webhook rows remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2 (Implementation, complete for their own rows)
+**Document ID:** META-116 | Version 1.2 | Status: Connection-lifecycle rows implemented (Phase 3.1); discovery/ad-account rows implemented (Phase 3.2); sync trigger + campaign/ad-set/ad read rows implemented 2026-09-11 (Phase 4.1); webhook rows remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.1/3.2/4.1 (Implementation, complete for their own rows)
 
 Consolidates the governing task's illustrative endpoint list against the pre-existing
 `ai-marketing-manager-gate-7-api-docs/docs/08-api/API_ENDPOINT_CATALOG.md` (API-002)'s
@@ -27,16 +27,30 @@ GET    /workspaces/:id/meta/connections
 GET    /meta/oauth/callback                                    (no requireAuth chain — see meta-oauth.md §2)
 POST   /workspaces/:id/meta/connections/:connectionId/reconnect
 DELETE /workspaces/:id/meta/connections/:connectionId
-POST   /workspaces/:id/meta/sync
+POST   /workspaces/:id/meta/sync                               (implemented Phase 4.1 — one job enqueued per selected Ad Account)
 GET    /workspaces/:id/meta/businesses                         (live discovery, Phase 3.2 — added, not in this list originally)
 GET    /workspaces/:id/meta/ad-accounts                        (live discovery, Phase 3.2 — distinct from the persisted list below)
 POST   /workspaces/:id/meta/ad-accounts/select                 (Phase 3.2)
 GET    /workspaces/:id/ad-accounts
 GET    /workspaces/:id/ad-accounts/:adAccountId
 DELETE /workspaces/:id/ad-accounts/:adAccountId                (deselection, Phase 3.2 — extends this already-approved resource path with a new verb)
+GET    /workspaces/:id/campaigns[?adAccountId=]                (Phase 4.1 — added, not in this list originally)
+GET    /workspaces/:id/campaigns/:campaignId                   (Phase 4.1)
+GET    /workspaces/:id/ad-sets[?campaignId=]                    (Phase 4.1)
+GET    /workspaces/:id/ad-sets/:adSetId                          (Phase 4.1)
+GET    /workspaces/:id/ads[?adSetId=]                             (Phase 4.1)
+GET    /workspaces/:id/ads/:adId                                   (Phase 4.1)
 GET    /webhooks/meta                                          (verification handshake)
 POST   /webhooks/meta                                           (event delivery — meta-webhooks.md)
 ```
+
+**Phase 4.1 naming**: campaigns/ad-sets/ads follow the same unprefixed `/workspaces/:id/...`
+pattern this document already established for the persisted `/ad-accounts` resource (never
+`/meta/*`, which stays reserved for connection/provider-lifecycle and live-discovery
+operations) — a natural extension of the existing convention, not a new one. Filtering by
+parent (`?adAccountId=`, `?campaignId=`, `?adSetId=`) via query parameter, rather than nested
+path segments, avoids unwieldy 3-4-level route nesting while every query still resolves
+`workspaceId` first (never a parent ID used to imply authorization on its own).
 
 **Phase 3.2 naming reconciliation** (recorded here since this document's §1 predates
 discovery): the governing Phase 3.2 task brief's own illustrative list nested ad-account
@@ -77,6 +91,9 @@ authorization.ts`, no new primitive)
 | `GET /workspaces/:id/meta/ad-accounts`                          | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read)` (Phase 3.2 — live discovery read)                                                                                                                                                                |
 | `POST /workspaces/:id/meta/ad-accounts/select`                  | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.connect)` (Phase 3.2 — a mutation, reuses `meta_connection.connect` per `meta-account-discovery.md` §5, no new permission)                                                                              |
 | `DELETE /workspaces/:id/ad-accounts/:adAccountId`               | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.disconnect) → requireResourceAccess(adAccountId, workspace.id)` (Phase 3.2 — deselection, the inverse of selection, reuses `meta_connection.disconnect` by the same "no new permission" reasoning)      |
+| `GET /workspaces/:id/campaigns[/{id}]`                          | `requireAuth → requireWorkspaceMembership → requirePermission(meta_connection.read) → requireResourceAccess` (for the single-resource form) (Phase 4.1)                                                                                                                               |
+| `GET /workspaces/:id/ad-sets[/{id}]`                            | Same chain as campaigns (Phase 4.1)                                                                                                                                                                                                                                                   |
+| `GET /workspaces/:id/ads[/{id}]`                                | Same chain as campaigns (Phase 4.1)                                                                                                                                                                                                                                                   |
 | `GET`/`POST /webhooks/meta`                                     | No `requireAuth()` — authenticated by Meta's own signature (`meta-webhooks.md` §1–2), identical exception pattern to `POST /webhooks/clerk`                                                                                                                                           |
 
 Every endpoint above reuses `apps/api/src/plugins/authorization.ts`'s already-shipped

@@ -1,6 +1,6 @@
 # Meta API Adapter Contract
 
-**Document ID:** META-109 | Version 1.1 | Status: `listBusinesses`/`listAdAccounts` implemented 2026-09-10 (Phase 3.2, extending §1's originally-reconciled interface); all other methods remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.2 (discovery methods, complete)
+**Document ID:** META-109 | Version 1.2 | Status: `listBusinesses`/`listAdAccounts` implemented (Phase 3.2); `listCampaigns`/`listAdSets`/`listAds` implemented 2026-09-11 (Phase 4.1); `getInsights`/mutation methods remain unimplemented | Phase: 3A (Architecture Finalization, closed); Phase 3.2/4.1 (discovery + read-only sync methods, complete)
 
 Consolidates `ai-marketing-manager-gate-7-api-docs/docs/08-api/META_API_ADAPTER.md` (API-009)
 and `ai-marketing-manager-gate-2-docs/docs/03-architecture/INTEGRATION_ARCHITECTURE.md`
@@ -17,8 +17,19 @@ single-lookup shape cannot express; `listBusinesses`/`listAdAccounts` fill that 
 Phase 3.2 implementation decision, not an architecture gap — the non-negotiable boundary (§2),
 pagination (§4, via Meta's `paging.next`, bounded to `MAX_DISCOVERY_PAGES = 20`), and
 provider-response normalization (§2) are all upheld exactly as specified. `getBusiness` (a
-single-ID lookup), `getAdAccount`, and every campaign/ad-set/ad/insights/mutation method
-remain unimplemented (Phase 4.1+ scope).
+single-ID lookup) and `getAdAccount` remain unimplemented.
+
+## 0.1 Implementation Status (Phase 4.1, 2026-09-11)
+
+`packages/domain/src/meta/client.ts` (moved here from `apps/api/src/plugins/meta-client.ts` in
+this phase — `workers/sync`'s real job processor is the first caller that isn't an API route,
+so the adapter had to move somewhere both `apps/api` and every worker can import; see the
+file's own doc comment) additionally implements `listCampaigns(connectionRef,
+externalAdAccountId)`, `listAdSets(connectionRef, externalCampaignId)`, `listAds(connectionRef,
+externalAdSetId)` — matching §1's already-reconciled interface shape exactly (no single-ID
+`getCampaign`/`getAdSet`/`getAd` implemented; sync only ever needs the list form). `getInsights`
+and every mutation method (`createCampaign`, `updateCampaign`, `updateAdSet`, `updateAd`,
+`verifyOperation`) remain unimplemented (Phase 4.2+/OD-3A-09 scope).
 
 ## 1. Interface (reconciled — API-009's list vs. the governing task's list)
 

@@ -34,6 +34,7 @@ export {
 export {
   findMembership,
   findMembershipById,
+  findActiveOwnerMembership,
   listActiveMembershipsForUser,
   listActiveMembershipsForWorkspace,
   removeMembership,

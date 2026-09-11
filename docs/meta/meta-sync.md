@@ -1,11 +1,23 @@
 # Meta Synchronization Architecture
 
-**Document ID:** META-112 | Version 1.0 | Status: Draft for Owner Approval | Phase: 3A (Architecture Finalization)
+**Document ID:** META-112 | Version 1.1 | Status: Implemented and real-UAT-verified 2026-09-11 (Phase 4.1) | Phase: 3A (Architecture Finalization, closed); Phase 4.1 (Implementation, complete)
 
 Consolidates `ai-marketing-manager-gate-5-docs/docs/06-meta/META_RETRY_AND_FAILURE.md`
 (META-007) and `ai-marketing-manager-gate-2-docs/docs/03-architecture/WORKER_ARCHITECTURE.md`
 (ARCH-005)'s Sync/Insights worker responsibilities against this project's already-shipped
-worker infrastructure. Conceptual only — no worker code, migration, or queue change.
+worker infrastructure. Conceptual only — no worker code, migration, or queue change (as of
+Phase 3A).
+
+## 0. Implementation Status (Phase 4.1, 2026-09-11)
+
+Implemented as designed below, with these Phase 4.1 implementation decisions: workspace/ad-
+account-scoped locking (§6) uses a Postgres advisory lock guarding a short check-then-insert
+against the `MetaSyncRun` table, not one long transaction spanning the whole sync pass (a
+transaction held open across many slow external Meta API calls would itself become a
+concurrency bug — pool exhaustion under load); `MetaSyncRun` (not named in this document, but
+required to satisfy §4's "every item must have an explicit outcome") is the durable per-pass
+outcome record. See `phase-4-1-implementation-report.md` for the full implementation record,
+real Meta documentation re-verification, and real UAT results.
 
 ## 1. Synchronization Lifecycle (from the governing task, unchanged in shape)
 
