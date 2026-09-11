@@ -258,9 +258,14 @@ not touched; compilation and static-page generation both succeed, only the stand
 trace-copy step fails, a well-known Windows Developer-Mode/symlink-privilege requirement that
 does not occur on CI's Linux runners).
 
-CI run URL and commit SHA: recorded in this report's closing "record final green CI run"
-commit, per this project's established two-commit pattern (see the git history for the exact
-commits).
+**First push (commit `b4cdab5e2403dba9dd7e43bc761a21e3f495c324`): red.** CI run
+[34510737080](https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34510737080)
+— `integration tests` failed on a real concurrency defect (§11), never reproduced locally.
+
+**Fix pushed (commit `4a0799c480bcb718681157ca64fcac17ea9fa24b`): green.** CI run
+[34520979925](https://github.com/Karthikeyan431/Meta-Marketing-Agent/actions/runs/34520979925)
+— `completed`/`success`, every stage passed, including the clean-database migration
+verification (`prisma migrate deploy` against a freshly-created Postgres service container).
 
 ## 15. Migrations
 
@@ -296,9 +301,11 @@ No unrelated files changed.
 
 ## 17. Commit SHA
 
-Recorded in the closing "record final green CI run" commit (see git history) — the
-implementation commit's own SHA and this report's final CI run URL are both filled in there,
-matching Phase 3.1's established two-commit pattern.
+- `b4cdab5e2403dba9dd7e43bc761a21e3f495c324` — `feat(meta): implement Meta Business & Ad
+Account discovery (Phase 3.2)` (CI red — the concurrency defect, §11)
+- `4a0799c480bcb718681157ca64fcac17ea9fa24b` — `fix(meta): retry the whole
+selectAdAccounts transaction on P2034 write conflict` (CI green)
+- This report's own closing "record final green CI run" commit (see git history for its SHA)
 
 ## 18. Known Limitations
 
